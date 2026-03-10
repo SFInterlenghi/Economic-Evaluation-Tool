@@ -24,8 +24,10 @@ if "lang_utility" not in st.session_state: st.session_state.lang_utility = False
 # Decision Making Assistant
 if "dm_prod_type" not in st.session_state: st.session_state.dm_prod_type = "Basic Chemical"
 if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 to 9)"
+if "dm_info_avail" not in st.session_state: st.session_state.dm_info_avail = "High"
+if "dm_severity" not in st.session_state: st.session_state.dm_severity = "High"
+if "dm_mat_type" not in st.session_state: st.session_state.dm_mat_type = "Solids"
 if "dm_plant_size" not in st.session_state: st.session_state.dm_plant_size = "Large"
-
 
 # --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
 if st.session_state.get("clear_on_next_run", False):
@@ -36,9 +38,15 @@ if st.session_state.get("clear_on_next_run", False):
     st.session_state.eq_cost_src = "Manual Input"
     st.session_state.oth_cost_src = "Manual Input"
     st.session_state.lang_utility = False
+    
+    # Clear Decision Making states back to defaults
     st.session_state.dm_prod_type = "Basic Chemical"
     st.session_state.dm_trl = "Industrial (8 to 9)"
+    st.session_state.dm_info_avail = "High"
+    st.session_state.dm_severity = "High"
+    st.session_state.dm_mat_type = "Solids"
     st.session_state.dm_plant_size = "Large"
+    
     st.session_state.table_key += 1
     st.session_state.clear_on_next_run = False
 
@@ -60,8 +68,12 @@ def load_scenario_data():
         st.session_state.eq_cost_src = data.get("Equipment Costs Source", "Manual Input")
         st.session_state.oth_cost_src = data.get("Other Costs Source", "Manual Input")
         st.session_state.lang_utility = data.get("Contains Utility Systems", False)
+        
         st.session_state.dm_prod_type = data.get("Product Type", "Basic Chemical")
         st.session_state.dm_trl = data.get("TRL", "Industrial (8 to 9)")
+        st.session_state.dm_info_avail = data.get("Info Availability", "High")
+        st.session_state.dm_severity = data.get("Process Severity", "High")
+        st.session_state.dm_mat_type = data.get("Material Handled", "Solids")
         st.session_state.dm_plant_size = data.get("Plant Size", "Large")
     else:
         st.session_state.mp_input = ""
@@ -70,72 +82,62 @@ def load_scenario_data():
         st.session_state.eq_cost_src = "Manual Input"
         st.session_state.oth_cost_src = "Manual Input"
         st.session_state.lang_utility = False
+        
         st.session_state.dm_prod_type = "Basic Chemical"
         st.session_state.dm_trl = "Industrial (8 to 9)"
+        st.session_state.dm_info_avail = "High"
+        st.session_state.dm_severity = "High"
+        st.session_state.dm_mat_type = "Solids"
         st.session_state.dm_plant_size = "Large"
+        
     st.session_state.table_key += 1
 
 
 # --- 1. SCENARIO SELECTION ---
 st.header("1. Scenario Name")
 scenario_name = st.text_input(
-    "Scenario Name", 
-    key="sn_input",
-    on_change=load_scenario_data,
+    "Scenario Name", key="sn_input", on_change=load_scenario_data,
     help="Press Enter after typing to load existing data or clear the board for a new scenario."
 )
-
 st.divider()
 
 # --- 2. BASIC INFORMATION ---
 st.header("2. Basic Information")
-
 col1, col2 = st.columns(2)
 with col1:
     main_product = st.text_input("Main Product Name", key="mp_input")
-
 with col2:
     allowed_units = ["g", "kg", "t", "mL", "L", "m³", "kWh", "MWh", "GWh", "MMBtu"]
     product_unit = st.selectbox("Main product unit", allowed_units, key="pu_input")
-    
     capacity_label = f"Main product capacity ({st.session_state.pu_input}/year)"
     product_capacity = st.number_input(capacity_label, min_value=0.0, step=1.0, key="pc_input")
-
 st.divider()
 
 # --- 3. PROCESS VARIABLES ---
 st.header("3. Process Variables")
-
 if scenario_name in st.session_state.scenarios:
     df_vars = pd.DataFrame(st.session_state.scenarios[scenario_name].get("Process Variables", []))
 else:
     df_vars = pd.DataFrame(columns=["Variable Name", "Unit", "Value"])
 
 edited_process_vars = st.data_editor(
-    df_vars,
-    key=f"editor_{st.session_state.table_key}",
-    num_rows="dynamic",
-    use_container_width=True,
-    hide_index=True,
+    df_vars, key=f"editor_{st.session_state.table_key}", num_rows="dynamic",
+    use_container_width=True, hide_index=True,
     column_config={
         "Variable Name": st.column_config.TextColumn("Variable Name", required=True),
         "Unit": st.column_config.TextColumn("Unit", required=True),
         "Value": st.column_config.NumberColumn("Value", required=True),
     }
 )
-
 st.divider()
 
 # --- 4. INVESTMENT COSTS SOURCES ---
 st.header("4. Investment Costs Sources")
-
 col_eq, col_oth = st.columns(2)
 with col_eq:
     eq_source = st.selectbox("Equipment costs source", ["Manual Input", "Aspen PEA"], key="eq_cost_src")
-
 with col_oth:
     oth_source = st.selectbox("Other Costs source", ["Manual Input", "Aspen PEA", "Lang Factors"], key="oth_cost_src")
-
     if st.session_state.oth_cost_src == "Lang Factors":
         st.checkbox("Contains utility systems?", key="lang_utility")
 
@@ -146,20 +148,20 @@ if st.session_state.eq_cost_src == "Aspen PEA" or st.session_state.oth_cost_src 
         st.file_uploader("IPEWB File", type=["xls", "xlsx", "xlsm"], key=f"ipewb_{st.session_state.table_key}")
     with col_file2:
         st.file_uploader("Reports file", type=["xls", "xlsx", "xlsm"], key=f"reports_{st.session_state.table_key}")
-
 st.divider()
 
 # --- 5. DECISION MAKING ASSISTANT ---
 st.header("5. Decision Making Assistant")
-
 col_dm1, col_dm2, col_dm3 = st.columns(3)
 with col_dm1:
     st.selectbox("Type of main product", ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"], key="dm_prod_type")
+    st.selectbox("Availability of information", ["High", "Medium", "Low"], key="dm_info_avail")
 with col_dm2:
     st.selectbox("TRL", ["Industrial (8 to 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"], key="dm_trl")
+    st.selectbox("Process severity", ["High", "Medium", "Low"], key="dm_severity")
 with col_dm3:
+    st.selectbox("Type of material handled", ["Solids", "Fluids and solids", "Fluids"], key="dm_mat_type")
     st.selectbox("Plant size", ["Large", "Medium", "Small"], key="dm_plant_size")
-
 st.divider()
 
 # --- SAVE BUTTON & LOGIC ---
@@ -172,7 +174,6 @@ if st.button("Save / Update Scenario", type="primary"):
         valid_vars = edited_process_vars.dropna(how="all")
         util_bool = st.session_state.lang_utility if st.session_state.oth_cost_src == "Lang Factors" else False
 
-        # Save the data
         st.session_state.scenarios[st.session_state.sn_input] = {
             "Product Name": st.session_state.mp_input,
             "Unit": st.session_state.pu_input,
@@ -184,6 +185,9 @@ if st.button("Save / Update Scenario", type="primary"):
             "Contains Utility Systems": util_bool,
             "Product Type": st.session_state.dm_prod_type,
             "TRL": st.session_state.dm_trl,
+            "Info Availability": st.session_state.dm_info_avail,
+            "Process Severity": st.session_state.dm_severity,
+            "Material Handled": st.session_state.dm_mat_type,
             "Plant Size": st.session_state.dm_plant_size
         }
         
@@ -191,20 +195,52 @@ if st.button("Save / Update Scenario", type="primary"):
         st.session_state.clear_on_next_run = True
         st.rerun()
 
+# --- TEMPORARY: REFERENCE TABLES ---
+st.header("6. Reference Tables View (To Be Hidden)")
+st.markdown("Verify these factors based on your image. They will be pushed to the backend `Calculations.py` page later.")
+
+reference_tables = {
+    "1. Lang Factors": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [3.1, 3.6, 4.7]}),
+    "2. Unscheduled Equipment": pd.DataFrame({"Item": ["Unscheduled Equipment Allowance"], "Value (%)": [10.0]}),
+    "3. Installation": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.45, 0.39, 0.47]}),
+    "4. Instrumentation and Controls": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.18, 0.26, 0.36]}),
+    "5. Piping": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.16, 0.31, 0.68]}),
+    "6. Electrical": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.10, 0.10, 0.11]}),
+    "7. Buildings": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.25, 0.29, 0.18]}),
+    "8. Yard Improvements": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.15, 0.12, 0.10]}),
+    "9. Service Facilities": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.40, 0.55, 0.70]}),
+    "10. Engineering and Supervision": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.33, 0.32, 0.33]}),
+    "11. Construction Expenses": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.39, 0.34, 0.41]}),
+    "12. Legal Expenses": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.04, 0.04, 0.04]}),
+    "13. Contractor's Fee": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.17, 0.19, 0.22]}),
+    "14. Contingency": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.35, 0.37, 0.44]}),
+    "15. Working Capital": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.15, 0.15, 0.15]}),
+}
+
+with st.expander("Show/Hide 15 Reference Tables"):
+    # Dynamically generate 3 columns to display the 15 tables efficiently
+    cols = st.columns(3)
+    for i, (table_name, df) in enumerate(reference_tables.items()):
+        col = cols[i % 3]
+        col.markdown(f"**{table_name}**")
+        col.dataframe(df, hide_index=True, use_container_width=True)
+
+st.divider()
+
 # --- SCENARIO COMPARISON TABLE ---
 st.header("Compiled Scenarios")
-
 if st.session_state.scenarios:
     summary_data = []
     for s_name, data in st.session_state.scenarios.items():
         summary_data.append({
             "Scenario Name": s_name,
             "Product": data["Product Name"],
-            "Capacity": data["Capacity Label"],
             "Eq. Cost": data["Equipment Costs Source"],
-            "TRL": data["TRL"]
+            "Product Type": data["Product Type"],
+            "TRL": data["TRL"],
+            "Info Avail.": data["Info Availability"],
+            "Severity": data["Process Severity"]
         })
-    
     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
     
     if st.button("Clear All Data", type="secondary"):
