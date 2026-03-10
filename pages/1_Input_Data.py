@@ -221,7 +221,7 @@ reference_tables = {
         "Laboratory charges": [0.1,0.175,0.25,0.175],
     }),
 "5. Maintenance and repairs": pd.DataFrame({
-        "Type of material handled", ["Solids", "Fluids and solids", "Fluids"],
+        "Type of material handled": ["Solids", "Fluids and solids", "Fluids"],
         "Basic Chemical": [0.02,0.015,0.01],
         "Specialty chemical":[0.03,0.025,0.02],
         "Consumer product":[0.04,0.035,0.03],
