@@ -200,32 +200,118 @@ st.header("6. Reference Tables View (To Be Hidden)")
 st.markdown("Verify these factors based on your image. They will be pushed to the backend `Calculations.py` page later.")
 
 reference_tables = {
-"1. Unscheduled Equipment": pd.DataFrame({
+    "1. Unscheduled Equipment": pd.DataFrame({
         "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High": [0.05, None, None, None],
+        "High":   [0.05, None, None, None],
         "Medium": [0.10, 0.15, None, None],
-        "Low": [0.15, 0.20, 0.25, 0.30]
+        "Low":    [0.15, 0.20, 0.25, 0.30]
     }),
-"2. Project contingency": pd.DataFrame({
+
+    "2. Project Contingency": pd.DataFrame({
         "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High": [0.25,0.3,0.35,0.4],
-        "Medium": [0.2,0.25,0.3,0.35],
-        "Low": [0.15, 0.20, 0.25, 0.30]
-    }),       
-"3. Laboratory charges": pd.DataFrame({
-        "Type of main product": ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Laboratory charges": [0.1,0.15,0.2,0.25],
-    }),       
-"4. Office Labor": pd.DataFrame({
-        "Type of main product": ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Laboratory charges": [0.1,0.175,0.25,0.175],
+        "High":   [0.25, 0.30, 0.35, 0.40],
+        "Medium": [0.20, 0.25, 0.30, 0.35],
+        "Low":    [0.15, 0.20, 0.25, 0.30]
     }),
-"5. Maintenance and repairs": pd.DataFrame({
-        "Type of material handled": ["Solids", "Fluids and solids", "Fluids"],
-        "Basic Chemical": [0.02,0.015,0.01],
-        "Specialty chemical":[0.03,0.025,0.02],
-        "Consumer product":[0.04,0.035,0.03],
-        "Pharmaceutical":  [0.02,0.015,0.01],                          
+
+    "3. Laboratory Charges": pd.DataFrame({
+        "Type of Main Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Laboratory Charges":   [0.10, 0.15, 0.20, 0.25]
+    }),
+
+    "4. Office Labor": pd.DataFrame({
+        "Type of Main Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Office Labor":         [0.10, 0.175, 0.25, 0.175]
+    }),
+
+    "5. Maintenance and Repairs": pd.DataFrame({
+        "Type of Material Handled": ["Solids", "Fluids and solids", "Fluids"],
+        "Basic chemical":     [0.020, 0.015, 0.010],
+        "Specialty chemical": [0.030, 0.025, 0.020],
+        "Consumer product":   [0.040, 0.035, 0.030],
+        "Pharmaceutical":     [0.020, 0.015, 0.010],
+    }),
+
+    "6. Operating Supplies": pd.DataFrame({
+        "Process Severity": ["High", "Medium", "Low"],
+        "Operating Supplies": [0.20, 0.15, 0.10]
+    }),
+
+    "7. Administrative Overhead": pd.DataFrame({
+        "Type of Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Administrative Overhead": [0.50, 0.60, 0.70, 0.60]
+    }),
+
+    "8. Manufacturing Overhead": pd.DataFrame({
+        "Process Severity": ["High", "Medium", "Low"],
+        "Manufacturing Overhead": [0.700, 0.600, 0.500]
+    }),
+
+    "9. Taxes and Insurance": pd.DataFrame({
+        "Process Severity": ["High", "Medium", "Low"],
+        "Taxes and Insurance": [0.050, 0.032, 0.014]
+    }),
+
+    "10. Patents and Royalties": pd.DataFrame({
+        "TRL / Type of Product": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "Basic chemical":     [0.01, 0.00, 0.00, 0.00],
+        "Specialty chemical": [0.02, 0.01, 0.01, 0.01],
+        "Consumer product":   [0.04, 0.02, 0.02, 0.02],
+        "Pharmaceutical":     [0.06, 0.03, 0.03, 0.03],
+    }),
+
+    "11. Distribution and Selling": pd.DataFrame({
+        "Type of Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Distribution and Selling": [0.08, 0.02, 0.20, 0.14]
+    }),
+
+    "12. Research and Development": pd.DataFrame({
+        "TRL / Type of Product": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "Basic chemical":     [0.02, 0.03, 0.03, 0.03],
+        "Specialty chemical": [0.03, 0.05, 0.05, 0.05],
+        "Consumer product":   [0.02, 0.025, 0.025, 0.025],
+        "Pharmaceutical":     [0.12, 0.17, 0.17, 0.17],
+    }),
+
+    "13. TIC Lower Bound": pd.DataFrame({
+        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "High":   [-0.15,  0.00,  0.00,  0.00],
+        "Medium": [-0.20, -0.25,  0.00,  0.00],
+        "Low":    [-0.25, -0.30, -0.40, -0.50],
+    }),
+
+    "14. TIC Upper Bound": pd.DataFrame({
+        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "High":   [0.20, 0.00, 0.00, 0.00],
+        "Medium": [0.30, 0.40, 0.00, 0.00],
+        "Low":    [0.40, 0.50, 0.70, 1.00],
+    }),
+
+    "15. Land Cost Factor": pd.DataFrame({
+        "Plant Size": ["Small", "Medium", "Large"],
+        "Buy":  [0.02, 0.02, 0.02],
+        "Rent": [0.002, 0.002, 0.002],
+    }),
+
+    "16. Lang Cost Factors": pd.DataFrame({
+        "Contains Utility Systems?": ["Yes", "No"],
+        "Spare Parts":               [0.083, 0.051],
+        "Equipment Setting":         [0.019, 0.019],
+        "Unscheduled Equipment":     [0.110, 0.107],
+        "Piping":                    [0.131, 0.368],
+        "Civil":                     [0.041, 0.191],
+        "Steel":                     [0.017, 0.272],
+        "Instrumentals":             [0.033, 0.342],
+        "Electrical":                [0.041, 0.335],
+        "Insulation":                [0.015, 0.082],
+        "Paint":                     [0.002, 0.040],
+        "Field Office Staff":        [0.037, 0.172],
+        "Construction Indirects":    [0.077, 0.377],
+        "Freight":                   [0.052, 0.091],
+        "Taxes and Permits":         [0.081, 0.142],
+        "Engineering and HO":        [0.065, 0.684],
+        "GA Overheads":              [0.049, 0.104],
+        "Contract Fee":              [0.044, 0.161],
     }),
 }
 
