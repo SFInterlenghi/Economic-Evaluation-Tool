@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 st.set_page_config(page_title="Input Configuration", layout="wide")
 
@@ -23,11 +24,17 @@ if "lang_utility" not in st.session_state: st.session_state.lang_utility = False
 
 # Decision Making Assistant
 if "dm_prod_type" not in st.session_state: st.session_state.dm_prod_type = "Basic Chemical"
-if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 to 9)"
+if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 or 9)" # Fixed to match Table 1 exactly
 if "dm_info_avail" not in st.session_state: st.session_state.dm_info_avail = "High"
 if "dm_severity" not in st.session_state: st.session_state.dm_severity = "High"
 if "dm_mat_type" not in st.session_state: st.session_state.dm_mat_type = "Solids"
 if "dm_plant_size" not in st.session_state: st.session_state.dm_plant_size = "Large"
+
+# Project CAPEX Inputs
+if "equip_acq" not in st.session_state: st.session_state.equip_acq = 0.0
+if "spare_parts" not in st.session_state: st.session_state.spare_parts = 0.0
+if "equip_setting" not in st.session_state: st.session_state.equip_setting = 0.0
+
 
 # --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
 if st.session_state.get("clear_on_next_run", False):
@@ -41,11 +48,15 @@ if st.session_state.get("clear_on_next_run", False):
     
     # Clear Decision Making states back to defaults
     st.session_state.dm_prod_type = "Basic Chemical"
-    st.session_state.dm_trl = "Industrial (8 to 9)"
+    st.session_state.dm_trl = "Industrial (8 or 9)"
     st.session_state.dm_info_avail = "High"
     st.session_state.dm_severity = "High"
     st.session_state.dm_mat_type = "Solids"
     st.session_state.dm_plant_size = "Large"
+    
+    st.session_state.equip_acq = 0.0
+    st.session_state.spare_parts = 0.0
+    st.session_state.equip_setting = 0.0
     
     st.session_state.table_key += 1
     st.session_state.clear_on_next_run = False
@@ -70,11 +81,15 @@ def load_scenario_data():
         st.session_state.lang_utility = data.get("Contains Utility Systems", False)
         
         st.session_state.dm_prod_type = data.get("Product Type", "Basic Chemical")
-        st.session_state.dm_trl = data.get("TRL", "Industrial (8 to 9)")
+        st.session_state.dm_trl = data.get("TRL", "Industrial (8 or 9)")
         st.session_state.dm_info_avail = data.get("Info Availability", "High")
         st.session_state.dm_severity = data.get("Process Severity", "High")
         st.session_state.dm_mat_type = data.get("Material Handled", "Solids")
         st.session_state.dm_plant_size = data.get("Plant Size", "Large")
+        
+        st.session_state.equip_acq = data.get("Equipment Acquisition", 0.0)
+        st.session_state.spare_parts = data.get("Spare Parts", 0.0)
+        st.session_state.equip_setting = data.get("Equipment Setting", 0.0)
     else:
         st.session_state.mp_input = ""
         st.session_state.pu_input = "kg"
@@ -84,14 +99,17 @@ def load_scenario_data():
         st.session_state.lang_utility = False
         
         st.session_state.dm_prod_type = "Basic Chemical"
-        st.session_state.dm_trl = "Industrial (8 to 9)"
+        st.session_state.dm_trl = "Industrial (8 or 9)"
         st.session_state.dm_info_avail = "High"
         st.session_state.dm_severity = "High"
         st.session_state.dm_mat_type = "Solids"
         st.session_state.dm_plant_size = "Large"
         
+        st.session_state.equip_acq = 0.0
+        st.session_state.spare_parts = 0.0
+        st.session_state.equip_setting = 0.0
+        
     st.session_state.table_key += 1
-
 
 # --- BACKGROUND REFERENCE TABLES (HIDDEN) ---
 reference_tables = {
@@ -194,6 +212,8 @@ reference_tables = {
         "Contract Fee":              [0.044, 0.161],
     }),
 }
+
+
 # --- 1. SCENARIO SELECTION ---
 st.header("1. Scenario Name")
 scenario_name = st.text_input(
@@ -258,25 +278,24 @@ with col_dm1:
     st.selectbox("Type of main product", ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"], key="dm_prod_type")
     st.selectbox("Availability of information", ["High", "Medium", "Low"], key="dm_info_avail")
 with col_dm2:
-    st.selectbox("TRL", ["Industrial (8 to 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"], key="dm_trl")
+    st.selectbox("TRL", ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"], key="dm_trl")
     st.selectbox("Process severity", ["High", "Medium", "Low"], key="dm_severity")
 with col_dm3:
     st.selectbox("Type of material handled", ["Solids", "Fluids and solids", "Fluids"], key="dm_mat_type")
     st.selectbox("Plant size", ["Large", "Medium", "Small"], key="dm_plant_size")
 st.divider()
 
-# --- 7. PROJECT CAPTION ---
-st.header("7. Project Caption")
+# --- 7. PROJECT CAPEX ---
+st.header("7. Project CAPEX")
 st.subheader("Equipment Costs")
 
 col_cap1, col_cap2, col_cap3 = st.columns(3)
 
-# 1. Equipment Acquisition (Always manual input)
+# 1. Equipment Acquisition (Always manual input in this proof of concept)
 with col_cap1:
     equip_acq = st.number_input("Equipment Acquisition ($)", min_value=0.0, step=1000.0, key="equip_acq")
 
 # 2. Spare Parts & Equipment Setting
-# Calculate the Lang Factor index based on utility checkbox (0 for Yes, 1 for No)
 lang_idx = 0 if st.session_state.lang_utility else 1
 lang_table = reference_tables["16. Lang Cost Factors"]
 
@@ -296,9 +315,38 @@ with col_cap3:
     else:
         equip_setting = st.number_input("Equipment Setting ($)", min_value=0.0, step=100.0, key="equip_setting")
 
-# 3. Final Equipment Costs Sum (Read-Only)
-total_equip_costs = equip_acq + spare_parts + equip_setting
-st.metric("Total Equipment Costs", f"${total_equip_costs:,.2f}")
+# Base Equipment Costs (Subtotal)
+base_equip_costs = equip_acq + spare_parts + equip_setting
+
+# Lookup Unscheduled Equipment % from Table 1
+unsched_table = reference_tables["1. Unscheduled Equipment"]
+current_trl = st.session_state.dm_trl
+current_info = st.session_state.dm_info_avail
+
+# Extract the specific row matching the current TRL
+row_match = unsched_table[unsched_table["TRL / Info Availability"] == current_trl]
+if not row_match.empty:
+    unsched_pct = row_match[current_info].values[0]
+    # Replace None/NaN with 0.0
+    if pd.isna(unsched_pct) or unsched_pct is None:
+        unsched_pct = 0.0
+else:
+    unsched_pct = 0.0
+
+unsched_equip_value = base_equip_costs * float(unsched_pct)
+total_equip_costs = base_equip_costs + unsched_equip_value
+
+st.markdown("##### Total Equipment Assembly")
+col_cap4, col_cap5, col_cap6 = st.columns(3)
+
+with col_cap4:
+    st.number_input("Base Equipment Costs ($)", value=float(base_equip_costs), disabled=True, help="Sum of Acquisition, Spare Parts, and Setting")
+
+with col_cap5:
+    st.number_input("Unscheduled Equipment (%)", value=float(unsched_pct * 100), disabled=True, help="Pulled from Reference Table 1")
+
+with col_cap6:
+    st.number_input("Total Equipment Costs ($)", value=float(total_equip_costs), disabled=True)
 
 st.divider()
 
@@ -328,10 +376,12 @@ if st.button("Save / Update Scenario", type="primary"):
             "Material Handled": st.session_state.dm_mat_type,
             "Plant Size": st.session_state.dm_plant_size,
             
-            # Project Caption Saving
+            # Project CAPEX Saving
             "Equipment Acquisition": equip_acq,
             "Spare Parts": spare_parts,
             "Equipment Setting": equip_setting,
+            "Base Equipment Costs": base_equip_costs,
+            "Unscheduled Equip Pct": unsched_pct,
             "Total Equipment Costs": total_equip_costs
         }
         
