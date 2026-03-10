@@ -200,21 +200,19 @@ st.header("6. Reference Tables View (To Be Hidden)")
 st.markdown("Verify these factors based on your image. They will be pushed to the backend `Calculations.py` page later.")
 
 reference_tables = {
-    "1. Lang Factors": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [3.1, 3.6, 4.7]}),
-    "2. Unscheduled Equipment": pd.DataFrame({"Item": ["Unscheduled Equipment Allowance"], "Value (%)": [10.0]}),
-    "3. Installation": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.45, 0.39, 0.47]}),
-    "4. Instrumentation and Controls": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.18, 0.26, 0.36]}),
-    "5. Piping": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.16, 0.31, 0.68]}),
-    "6. Electrical": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.10, 0.10, 0.11]}),
-    "7. Buildings": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.25, 0.29, 0.18]}),
-    "8. Yard Improvements": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.15, 0.12, 0.10]}),
-    "9. Service Facilities": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.40, 0.55, 0.70]}),
-    "10. Engineering and Supervision": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.33, 0.32, 0.33]}),
-    "11. Construction Expenses": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.39, 0.34, 0.41]}),
-    "12. Legal Expenses": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.04, 0.04, 0.04]}),
-    "13. Contractor's Fee": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.17, 0.19, 0.22]}),
-    "14. Contingency": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.35, 0.37, 0.44]}),
-    "15. Working Capital": pd.DataFrame({"Material Type": ["Solids", "Fluids and solids", "Fluids"], "Factor": [0.15, 0.15, 0.15]}),
+"1. Unscheduled Equipment": pd.DataFrame({
+        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "High": [0.05, None, None, None],
+        "Medium": [0.10, 0.15, None, None],
+        "Low": [0.15, 0.20, 0.25, 0.30]
+    }),
+ "2. Project contingency": pd.DataFrame({
+        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
+        "High": [0.25,0.3,0.35,0.4],
+        "Medium": [0.2,0.25,0.3,0.35],
+        "Low": [0.15, 0.20, 0.25, 0.30]
+    }),       
+
 }
 
 with st.expander("Show/Hide 15 Reference Tables"):
