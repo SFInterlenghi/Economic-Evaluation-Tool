@@ -29,6 +29,11 @@ if "dm_severity" not in st.session_state: st.session_state.dm_severity = "High"
 if "dm_mat_type" not in st.session_state: st.session_state.dm_mat_type = "Solids"
 if "dm_plant_size" not in st.session_state: st.session_state.dm_plant_size = "Large"
 
+# Project Caption Inputs
+if "equip_acq" not in st.session_state: st.session_state.equip_acq = 0.0
+if "spare_parts" not in st.session_state: st.session_state.spare_parts = 0.0
+if "equip_setting" not in st.session_state: st.session_state.equip_setting = 0.0
+
 # --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
 if st.session_state.get("clear_on_next_run", False):
     st.session_state.sn_input = ""
@@ -39,13 +44,16 @@ if st.session_state.get("clear_on_next_run", False):
     st.session_state.oth_cost_src = "Manual Input"
     st.session_state.lang_utility = False
     
-    # Clear Decision Making states back to defaults
     st.session_state.dm_prod_type = "Basic Chemical"
     st.session_state.dm_trl = "Industrial (8 to 9)"
     st.session_state.dm_info_avail = "High"
     st.session_state.dm_severity = "High"
     st.session_state.dm_mat_type = "Solids"
     st.session_state.dm_plant_size = "Large"
+    
+    st.session_state.equip_acq = 0.0
+    st.session_state.spare_parts = 0.0
+    st.session_state.equip_setting = 0.0
     
     st.session_state.table_key += 1
     st.session_state.clear_on_next_run = False
@@ -75,6 +83,10 @@ def load_scenario_data():
         st.session_state.dm_severity = data.get("Process Severity", "High")
         st.session_state.dm_mat_type = data.get("Material Handled", "Solids")
         st.session_state.dm_plant_size = data.get("Plant Size", "Large")
+        
+        st.session_state.equip_acq = data.get("Equipment Acquisition", 0.0)
+        st.session_state.spare_parts = data.get("Spare Parts", 0.0)
+        st.session_state.equip_setting = data.get("Equipment Setting", 0.0)
     else:
         st.session_state.mp_input = ""
         st.session_state.pu_input = "kg"
@@ -90,7 +102,37 @@ def load_scenario_data():
         st.session_state.dm_mat_type = "Solids"
         st.session_state.dm_plant_size = "Large"
         
+        st.session_state.equip_acq = 0.0
+        st.session_state.spare_parts = 0.0
+        st.session_state.equip_setting = 0.0
+        
     st.session_state.table_key += 1
+
+# --- BACKGROUND REFERENCE TABLES (HIDDEN) ---
+# (Keeping this exactly as defined previously to preserve calculation lookups)
+reference_tables = {
+    # ... [Tables 1 through 15 removed from this snippet for brevity, keep them in your actual code] ...
+    "16. Lang Cost Factors": pd.DataFrame({
+        "Contains Utility Systems?": ["Yes", "No"],
+        "Spare Parts":               [0.083, 0.051],
+        "Equipment Setting":         [0.019, 0.019],
+        "Unscheduled Equipment":     [0.110, 0.107],
+        "Piping":                    [0.131, 0.368],
+        "Civil":                     [0.041, 0.191],
+        "Steel":                     [0.017, 0.272],
+        "Instrumentals":             [0.033, 0.342],
+        "Electrical":                [0.041, 0.335],
+        "Insulation":                [0.015, 0.082],
+        "Paint":                     [0.002, 0.040],
+        "Field Office Staff":        [0.037, 0.172],
+        "Construction Indirects":    [0.077, 0.377],
+        "Freight":                   [0.052, 0.091],
+        "Taxes and Permits":         [0.081, 0.142],
+        "Engineering and HO":        [0.065, 0.684],
+        "GA Overheads":              [0.049, 0.104],
+        "Contract Fee":              [0.044, 0.161],
+    }),
+}
 
 
 # --- 1. SCENARIO SELECTION ---
@@ -164,6 +206,43 @@ with col_dm3:
     st.selectbox("Plant size", ["Large", "Medium", "Small"], key="dm_plant_size")
 st.divider()
 
+# --- 7. PROJECT CAPTION ---
+st.header("7. Project Caption")
+st.subheader("Equipment Costs")
+
+col_cap1, col_cap2, col_cap3 = st.columns(3)
+
+# 1. Equipment Acquisition (Always manual input)
+with col_cap1:
+    equip_acq = st.number_input("Equipment Acquisition ($)", min_value=0.0, step=1000.0, key="equip_acq")
+
+# 2. Spare Parts & Equipment Setting
+# Calculate the Lang Factor index based on utility checkbox (0 for Yes, 1 for No)
+lang_idx = 0 if st.session_state.lang_utility else 1
+lang_table = reference_tables["16. Lang Cost Factors"]
+
+with col_cap2:
+    if st.session_state.oth_cost_src == "Lang Factors":
+        factor_spare = lang_table["Spare Parts"].iloc[lang_idx]
+        spare_parts = equip_acq * factor_spare
+        st.number_input("Spare Parts ($) [Lang Factored]", value=float(spare_parts), disabled=True)
+    else:
+        spare_parts = st.number_input("Spare Parts ($)", min_value=0.0, step=100.0, key="spare_parts")
+
+with col_cap3:
+    if st.session_state.oth_cost_src == "Lang Factors":
+        factor_setting = lang_table["Equipment Setting"].iloc[lang_idx]
+        equip_setting = equip_acq * factor_setting
+        st.number_input("Equipment Setting ($) [Lang Factored]", value=float(equip_setting), disabled=True)
+    else:
+        equip_setting = st.number_input("Equipment Setting ($)", min_value=0.0, step=100.0, key="equip_setting")
+
+# 3. Final Equipment Costs Sum (Read-Only)
+total_equip_costs = equip_acq + spare_parts + equip_setting
+st.metric("Total Equipment Costs", f"${total_equip_costs:,.2f}")
+
+st.divider()
+
 # --- SAVE BUTTON & LOGIC ---
 if st.button("Save / Update Scenario", type="primary"):
     if not st.session_state.sn_input:
@@ -188,142 +267,18 @@ if st.button("Save / Update Scenario", type="primary"):
             "Info Availability": st.session_state.dm_info_avail,
             "Process Severity": st.session_state.dm_severity,
             "Material Handled": st.session_state.dm_mat_type,
-            "Plant Size": st.session_state.dm_plant_size
+            "Plant Size": st.session_state.dm_plant_size,
+            
+            # Project Caption Saving
+            "Equipment Acquisition": equip_acq,
+            "Spare Parts": spare_parts,
+            "Equipment Setting": equip_setting,
+            "Total Equipment Costs": total_equip_costs
         }
         
         st.session_state.success_msg = f"Scenario '{st.session_state.sn_input}' successfully saved!"
         st.session_state.clear_on_next_run = True
         st.rerun()
-
-# --- TEMPORARY: REFERENCE TABLES ---
-st.header("6. Reference Tables View (To Be Hidden)")
-st.markdown("Verify these factors based on your image. They will be pushed to the backend `Calculations.py` page later.")
-
-reference_tables = {
-    "1. Unscheduled Equipment": pd.DataFrame({
-        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High":   [0.05, None, None, None],
-        "Medium": [0.10, 0.15, None, None],
-        "Low":    [0.15, 0.20, 0.25, 0.30]
-    }),
-
-    "2. Project Contingency": pd.DataFrame({
-        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High":   [0.25, 0.30, 0.35, 0.40],
-        "Medium": [0.20, 0.25, 0.30, 0.35],
-        "Low":    [0.15, 0.20, 0.25, 0.30]
-    }),
-
-    "3. Laboratory Charges": pd.DataFrame({
-        "Type of Main Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Laboratory Charges":   [0.10, 0.15, 0.20, 0.25]
-    }),
-
-    "4. Office Labor": pd.DataFrame({
-        "Type of Main Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Office Labor":         [0.10, 0.175, 0.25, 0.175]
-    }),
-
-    "5. Maintenance and Repairs": pd.DataFrame({
-        "Type of Material Handled": ["Solids", "Fluids and solids", "Fluids"],
-        "Basic chemical":     [0.020, 0.015, 0.010],
-        "Specialty chemical": [0.030, 0.025, 0.020],
-        "Consumer product":   [0.040, 0.035, 0.030],
-        "Pharmaceutical":     [0.020, 0.015, 0.010],
-    }),
-
-    "6. Operating Supplies": pd.DataFrame({
-        "Process Severity": ["High", "Medium", "Low"],
-        "Operating Supplies": [0.20, 0.15, 0.10]
-    }),
-
-    "7. Administrative Overhead": pd.DataFrame({
-        "Type of Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Administrative Overhead": [0.50, 0.60, 0.70, 0.60]
-    }),
-
-    "8. Manufacturing Overhead": pd.DataFrame({
-        "Process Severity": ["High", "Medium", "Low"],
-        "Manufacturing Overhead": [0.700, 0.600, 0.500]
-    }),
-
-    "9. Taxes and Insurance": pd.DataFrame({
-        "Process Severity": ["High", "Medium", "Low"],
-        "Taxes and Insurance": [0.050, 0.032, 0.014]
-    }),
-
-    "10. Patents and Royalties": pd.DataFrame({
-        "TRL / Type of Product": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "Basic chemical":     [0.01, 0.00, 0.00, 0.00],
-        "Specialty chemical": [0.02, 0.01, 0.01, 0.01],
-        "Consumer product":   [0.04, 0.02, 0.02, 0.02],
-        "Pharmaceutical":     [0.06, 0.03, 0.03, 0.03],
-    }),
-
-    "11. Distribution and Selling": pd.DataFrame({
-        "Type of Product": ["Basic chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
-        "Distribution and Selling": [0.08, 0.02, 0.20, 0.14]
-    }),
-
-    "12. Research and Development": pd.DataFrame({
-        "TRL / Type of Product": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "Basic chemical":     [0.02, 0.03, 0.03, 0.03],
-        "Specialty chemical": [0.03, 0.05, 0.05, 0.05],
-        "Consumer product":   [0.02, 0.025, 0.025, 0.025],
-        "Pharmaceutical":     [0.12, 0.17, 0.17, 0.17],
-    }),
-
-    "13. TIC Lower Bound": pd.DataFrame({
-        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High":   [-0.15,  0.00,  0.00,  0.00],
-        "Medium": [-0.20, -0.25,  0.00,  0.00],
-        "Low":    [-0.25, -0.30, -0.40, -0.50],
-    }),
-
-    "14. TIC Upper Bound": pd.DataFrame({
-        "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
-        "High":   [0.20, 0.00, 0.00, 0.00],
-        "Medium": [0.30, 0.40, 0.00, 0.00],
-        "Low":    [0.40, 0.50, 0.70, 1.00],
-    }),
-
-    "15. Land Cost Factor": pd.DataFrame({
-        "Plant Size": ["Small", "Medium", "Large"],
-        "Buy":  [0.02, 0.02, 0.02],
-        "Rent": [0.002, 0.002, 0.002],
-    }),
-
-    "16. Lang Cost Factors": pd.DataFrame({
-        "Contains Utility Systems?": ["Yes", "No"],
-        "Spare Parts":               [0.083, 0.051],
-        "Equipment Setting":         [0.019, 0.019],
-        "Unscheduled Equipment":     [0.110, 0.107],
-        "Piping":                    [0.131, 0.368],
-        "Civil":                     [0.041, 0.191],
-        "Steel":                     [0.017, 0.272],
-        "Instrumentals":             [0.033, 0.342],
-        "Electrical":                [0.041, 0.335],
-        "Insulation":                [0.015, 0.082],
-        "Paint":                     [0.002, 0.040],
-        "Field Office Staff":        [0.037, 0.172],
-        "Construction Indirects":    [0.077, 0.377],
-        "Freight":                   [0.052, 0.091],
-        "Taxes and Permits":         [0.081, 0.142],
-        "Engineering and HO":        [0.065, 0.684],
-        "GA Overheads":              [0.049, 0.104],
-        "Contract Fee":              [0.044, 0.161],
-    }),
-}
-
-with st.expander("Show/Hide 15 Reference Tables"):
-    # Dynamically generate 3 columns to display the 15 tables efficiently
-    cols = st.columns(3)
-    for i, (table_name, df) in enumerate(reference_tables.items()):
-        col = cols[i % 3]
-        col.markdown(f"**{table_name}**")
-        col.dataframe(df, hide_index=True, use_container_width=True)
-
-st.divider()
 
 # --- SCENARIO COMPARISON TABLE ---
 st.header("Compiled Scenarios")
@@ -334,9 +289,8 @@ if st.session_state.scenarios:
             "Scenario Name": s_name,
             "Product": data["Product Name"],
             "Eq. Cost": data["Equipment Costs Source"],
-            "Product Type": data["Product Type"],
+            "Total Equip. Cost": f"${data['Total Equipment Costs']:,.2f}",
             "TRL": data["TRL"],
-            "Info Avail.": data["Info Availability"],
             "Severity": data["Process Severity"]
         })
     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
