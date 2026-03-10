@@ -206,13 +206,27 @@ reference_tables = {
         "Medium": [0.10, 0.15, None, None],
         "Low": [0.15, 0.20, 0.25, 0.30]
     }),
- "2. Project contingency": pd.DataFrame({
+"2. Project contingency": pd.DataFrame({
         "TRL / Info Availability": ["Industrial (8 or 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"],
         "High": [0.25,0.3,0.35,0.4],
         "Medium": [0.2,0.25,0.3,0.35],
         "Low": [0.15, 0.20, 0.25, 0.30]
     }),       
-
+"3. Laboratory charges": pd.DataFrame({
+        "Type of main product": ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Laboratory charges": [0.1,0.15,0.2,0.25],
+    }),       
+"4. Office Labor": pd.DataFrame({
+        "Type of main product": ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"],
+        "Laboratory charges": [0.1,0.175,0.25,0.175],
+    }),
+"5. Maintenance and repairs": pd.DataFrame({
+        "Type of material handled", ["Solids", "Fluids and solids", "Fluids"],
+        "Basic Chemical": [0.02,0.015,0.01],
+        "Specialty chemical":[0.03,0.025,0.02],
+        "Consumer product":[0.04,0.035,0.03],
+        "Pharmaceutical":  [0.02,0.015,0.01],                          
+    }),
 }
 
 with st.expander("Show/Hide 15 Reference Tables"):
