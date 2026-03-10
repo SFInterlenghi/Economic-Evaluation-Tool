@@ -16,10 +16,15 @@ if "pu_input" not in st.session_state: st.session_state.pu_input = "kg"
 if "pc_input" not in st.session_state: st.session_state.pc_input = None
 if "table_key" not in st.session_state: st.session_state.table_key = 0
 
-# New specific keys for Investment Costs Sources
+# Investment Costs Sources
 if "eq_cost_src" not in st.session_state: st.session_state.eq_cost_src = "Manual Input"
 if "oth_cost_src" not in st.session_state: st.session_state.oth_cost_src = "Manual Input"
 if "lang_utility" not in st.session_state: st.session_state.lang_utility = False
+
+# Decision Making Assistant
+if "dm_prod_type" not in st.session_state: st.session_state.dm_prod_type = "Basic Chemical"
+if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 to 9)"
+if "dm_plant_size" not in st.session_state: st.session_state.dm_plant_size = "Large"
 
 
 # --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
@@ -31,8 +36,11 @@ if st.session_state.get("clear_on_next_run", False):
     st.session_state.eq_cost_src = "Manual Input"
     st.session_state.oth_cost_src = "Manual Input"
     st.session_state.lang_utility = False
+    st.session_state.dm_prod_type = "Basic Chemical"
+    st.session_state.dm_trl = "Industrial (8 to 9)"
+    st.session_state.dm_plant_size = "Large"
     st.session_state.table_key += 1
-    st.session_state.clear_on_next_run = False # Reset the flag
+    st.session_state.clear_on_next_run = False
 
 # Handle success messages across reruns
 if "success_msg" in st.session_state and st.session_state.success_msg:
@@ -52,6 +60,9 @@ def load_scenario_data():
         st.session_state.eq_cost_src = data.get("Equipment Costs Source", "Manual Input")
         st.session_state.oth_cost_src = data.get("Other Costs Source", "Manual Input")
         st.session_state.lang_utility = data.get("Contains Utility Systems", False)
+        st.session_state.dm_prod_type = data.get("Product Type", "Basic Chemical")
+        st.session_state.dm_trl = data.get("TRL", "Industrial (8 to 9)")
+        st.session_state.dm_plant_size = data.get("Plant Size", "Large")
     else:
         st.session_state.mp_input = ""
         st.session_state.pu_input = "kg"
@@ -59,6 +70,9 @@ def load_scenario_data():
         st.session_state.eq_cost_src = "Manual Input"
         st.session_state.oth_cost_src = "Manual Input"
         st.session_state.lang_utility = False
+        st.session_state.dm_prod_type = "Basic Chemical"
+        st.session_state.dm_trl = "Industrial (8 to 9)"
+        st.session_state.dm_plant_size = "Large"
     st.session_state.table_key += 1
 
 
@@ -117,43 +131,34 @@ st.header("4. Investment Costs Sources")
 
 col_eq, col_oth = st.columns(2)
 with col_eq:
-    eq_source = st.selectbox(
-        "Equipment costs source", 
-        ["Manual Input", "Aspen PEA"], 
-        key="eq_cost_src"
-    )
+    eq_source = st.selectbox("Equipment costs source", ["Manual Input", "Aspen PEA"], key="eq_cost_src")
 
 with col_oth:
-    oth_source = st.selectbox(
-        "Other Costs source", 
-        ["Manual Input", "Aspen PEA", "Lang Factors"], 
-        key="oth_cost_src"
-    )
+    oth_source = st.selectbox("Other Costs source", ["Manual Input", "Aspen PEA", "Lang Factors"], key="oth_cost_src")
 
-    # Conditional Logic: Show checkbox only if Lang Factors is selected
     if st.session_state.oth_cost_src == "Lang Factors":
         st.checkbox("Contains utility systems?", key="lang_utility")
 
-# Conditional Logic: Show file uploaders if Aspen PEA is selected anywhere
 if st.session_state.eq_cost_src == "Aspen PEA" or st.session_state.oth_cost_src == "Aspen PEA":
     st.markdown("#### Upload Aspen PEA Files")
     col_file1, col_file2 = st.columns(2)
     with col_file1:
-        # Binding the key to table_key ensures the file clears when the case is saved
         st.file_uploader("IPEWB File", type=["xls", "xlsx", "xlsm"], key=f"ipewb_{st.session_state.table_key}")
     with col_file2:
         st.file_uploader("Reports file", type=["xls", "xlsx", "xlsm"], key=f"reports_{st.session_state.table_key}")
 
-# Decision Making Assistant Table
-with st.expander("Decision Making Assistant", expanded=True):
-    assistant_data = pd.DataFrame({
-        "Stage": ["Early conceptual / R&D", "Basic Engineering", "Execution"],
-        "Project Phase": ["Phase 1", "Phase 2 / Phase 3", "Phase 4 / Phase 5"],
-        "Available Class (AACE)": ["Class 5 / Class 4", "Class 3", "Class 2 / Class 1"],
-        "Equipment cost basis": ["Aspen PEA", "Aspen PEA", "Manual"],
-        "Other costs basis": ["Lang Factor", "Aspen PEA", "Manual"]
-    })
-    st.dataframe(assistant_data, hide_index=True, use_container_width=True)
+st.divider()
+
+# --- 5. DECISION MAKING ASSISTANT ---
+st.header("5. Decision Making Assistant")
+
+col_dm1, col_dm2, col_dm3 = st.columns(3)
+with col_dm1:
+    st.selectbox("Type of main product", ["Basic Chemical", "Specialty chemical", "Consumer product", "Pharmaceutical"], key="dm_prod_type")
+with col_dm2:
+    st.selectbox("TRL", ["Industrial (8 to 9)", "Pilot (5 to 7)", "Bench (3 or 4)", "Theoretical (1 or 2)"], key="dm_trl")
+with col_dm3:
+    st.selectbox("Plant size", ["Large", "Medium", "Small"], key="dm_plant_size")
 
 st.divider()
 
@@ -165,8 +170,6 @@ if st.button("Save / Update Scenario", type="primary"):
         st.error("Please provide a Main Product Capacity before saving.")
     else:
         valid_vars = edited_process_vars.dropna(how="all")
-        
-        # Determine the correct boolean for utility systems
         util_bool = st.session_state.lang_utility if st.session_state.oth_cost_src == "Lang Factors" else False
 
         # Save the data
@@ -178,12 +181,13 @@ if st.button("Save / Update Scenario", type="primary"):
             "Process Variables": valid_vars.to_dict(orient="records"),
             "Equipment Costs Source": st.session_state.eq_cost_src,
             "Other Costs Source": st.session_state.oth_cost_src,
-            "Contains Utility Systems": util_bool
+            "Contains Utility Systems": util_bool,
+            "Product Type": st.session_state.dm_prod_type,
+            "TRL": st.session_state.dm_trl,
+            "Plant Size": st.session_state.dm_plant_size
         }
         
         st.session_state.success_msg = f"Scenario '{st.session_state.sn_input}' successfully saved!"
-        
-        # Activate the clear flag and restart
         st.session_state.clear_on_next_run = True
         st.rerun()
 
@@ -198,7 +202,7 @@ if st.session_state.scenarios:
             "Product": data["Product Name"],
             "Capacity": data["Capacity Label"],
             "Eq. Cost": data["Equipment Costs Source"],
-            "Oth. Cost": data["Other Costs Source"]
+            "TRL": data["TRL"]
         })
     
     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
