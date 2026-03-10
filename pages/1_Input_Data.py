@@ -14,7 +14,7 @@ if "scenarios" not in st.session_state:
 st.header("1. Scenario Name")
 scenario_name = st.text_input(
     "Scenario Name (Type a new name to create, or an existing name to edit)", 
-    help="Press Enter after typing to load existing data."
+    help="Press Enter after typing to load existing data or clear the board for a new scenario."
 )
 
 # Fetch existing data if the scenario already exists, otherwise return an empty dictionary
@@ -27,21 +27,20 @@ st.header("2. Basic Information")
 
 col1, col2 = st.columns(2)
 with col1:
-    # Use existing data as the default value if it exists, otherwise leave blank
-    project_title = st.text_input("Project Title", value=existing_data.get("Project Title", ""))
+    # Uses existing data if found, otherwise defaults to an empty string ""
     main_product = st.text_input("Main Product Name", value=existing_data.get("Product Name", ""))
 
 with col2:
     allowed_units = ["g", "kg", "t", "mL", "L", "m³", "kWh", "MWh", "GWh", "MMBtu"]
     
-    # Find the index of the previously saved unit, default to 'kg' (index 1) if new
     saved_unit = existing_data.get("Unit", "kg")
     unit_index = allowed_units.index(saved_unit) if saved_unit in allowed_units else 1
     
     product_unit = st.selectbox("Main product unit", allowed_units, index=unit_index)
     
     capacity_label = f"Main product capacity ({product_unit}/year)"
-    saved_capacity = float(existing_data.get("Capacity", 0.0))
+    # Uses existing data if found, otherwise defaults to None (empty box)
+    saved_capacity = existing_data.get("Capacity", None)
     product_capacity = st.number_input(capacity_label, min_value=0.0, value=saved_capacity, step=1.0)
 
 st.divider()
@@ -50,10 +49,10 @@ st.divider()
 st.header("3. Process Variables")
 st.markdown("Add your process variables below. Click the **+** at the bottom of the table to add more rows.")
 
-# Load existing variables into a DataFrame if they exist, otherwise create a blank template
 if "Process Variables" in existing_data and existing_data["Process Variables"]:
     df_vars = pd.DataFrame(existing_data["Process Variables"])
 else:
+    # Defaults to an empty template if it's a new scenario
     df_vars = pd.DataFrame(columns=["Variable Name", "Unit", "Value"])
 
 edited_process_vars = st.data_editor(
@@ -74,15 +73,15 @@ st.divider()
 if st.button("Save / Update Scenario", type="primary"):
     if not scenario_name:
         st.error("Please provide a Scenario Name before saving.")
+    elif product_capacity is None:
+        st.error("Please provide a Main Product Capacity before saving.")
     else:
-        # Clean up the table to remove any completely empty rows
         valid_vars = edited_process_vars.dropna(how="all")
         
         is_update = scenario_name in st.session_state.scenarios
         
-        # Save or overwrite the inputs into the session state dictionary
+        # Save or overwrite the inputs without the Project Title
         st.session_state.scenarios[scenario_name] = {
-            "Project Title": project_title,
             "Product Name": main_product,
             "Unit": product_unit,
             "Capacity": product_capacity,
@@ -103,7 +102,6 @@ if st.session_state.scenarios:
     for s_name, data in st.session_state.scenarios.items():
         summary_data.append({
             "Scenario Name": s_name,
-            "Project Title": data["Project Title"],
             "Product": data["Product Name"],
             "Capacity": data["Capacity Label"],
             "Total Process Variables": len(data["Process Variables"])
