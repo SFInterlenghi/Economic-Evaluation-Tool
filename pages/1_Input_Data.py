@@ -10,7 +10,6 @@ st.markdown("Define the parameters for your scenario. Type an existing Scenario 
 if "scenarios" not in st.session_state:
     st.session_state.scenarios = {}
 
-# Initialize the specific widget keys so Streamlit can control them
 if "sn_input" not in st.session_state:
     st.session_state.sn_input = ""
 if "mp_input" not in st.session_state:
@@ -20,30 +19,36 @@ if "pu_input" not in st.session_state:
 if "pc_input" not in st.session_state:
     st.session_state.pc_input = None
 if "table_key" not in st.session_state:
-    st.session_state.table_key = 0 # Used to force the table to clear
+    st.session_state.table_key = 0
+
+# --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
+if st.session_state.get("clear_on_next_run", False):
+    st.session_state.sn_input = ""
+    st.session_state.mp_input = ""
+    st.session_state.pc_input = None
+    st.session_state.pu_input = "kg"
+    st.session_state.table_key += 1
+    st.session_state.clear_on_next_run = False # Reset the flag
 
 # Handle success messages across reruns
 if "success_msg" in st.session_state and st.session_state.success_msg:
     st.success(st.session_state.success_msg)
     st.session_state.success_msg = "" # Clear it so it only shows once
 
+
 # --- CALLBACK FUNCTION ---
 def load_scenario_data():
     """Triggered instantly when the Scenario Name text box changes."""
     sn = st.session_state.sn_input
     if sn in st.session_state.scenarios:
-        # Load existing data into the widgets
         data = st.session_state.scenarios[sn]
         st.session_state.mp_input = data["Product Name"]
         st.session_state.pu_input = data["Unit"]
         st.session_state.pc_input = data["Capacity"]
     else:
-        # Force clear all widgets for a new scenario
         st.session_state.mp_input = ""
         st.session_state.pu_input = "kg"
         st.session_state.pc_input = None
-    
-    # Increment table key to force the Data Editor to redraw
     st.session_state.table_key += 1
 
 
@@ -69,7 +74,6 @@ with col2:
     allowed_units = ["g", "kg", "t", "mL", "L", "m³", "kWh", "MWh", "GWh", "MMBtu"]
     product_unit = st.selectbox("Main product unit", allowed_units, key="pu_input")
     
-    # The label updates dynamically based on the selectbox state
     capacity_label = f"Main product capacity ({st.session_state.pu_input}/year)"
     product_capacity = st.number_input(capacity_label, min_value=0.0, step=1.0, key="pc_input")
 
@@ -79,7 +83,6 @@ st.divider()
 st.header("3. Process Variables")
 st.markdown("Add your process variables below. Click the **+** at the bottom of the table to add more rows.")
 
-# Determine what data to feed the table initially
 if scenario_name in st.session_state.scenarios:
     df_vars = pd.DataFrame(st.session_state.scenarios[scenario_name]["Process Variables"])
 else:
@@ -87,7 +90,7 @@ else:
 
 edited_process_vars = st.data_editor(
     df_vars,
-    key=f"editor_{st.session_state.table_key}", # Unique key forces it to reset when we change scenarios
+    key=f"editor_{st.session_state.table_key}",
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
@@ -118,17 +121,10 @@ if st.button("Save / Update Scenario", type="primary"):
             "Process Variables": valid_vars.to_dict(orient="records")
         }
         
-        # Set the success message to display after the wipe
         st.session_state.success_msg = f"Scenario '{st.session_state.sn_input}' successfully saved!"
         
-        # --- THE WIPE: Clear all fields for the next entry ---
-        st.session_state.sn_input = ""
-        st.session_state.mp_input = ""
-        st.session_state.pc_input = None
-        st.session_state.pu_input = "kg"
-        st.session_state.table_key += 1
-        
-        # Rerun the app instantly to show the empty fields
+        # Activate the clear flag and restart
+        st.session_state.clear_on_next_run = True
         st.rerun()
 
 # --- SCENARIO COMPARISON TABLE ---
