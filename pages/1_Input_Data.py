@@ -4,21 +4,57 @@ import pandas as pd
 st.set_page_config(page_title="Input Configuration", layout="wide")
 
 st.title("Scenario Configuration & Inputs")
-st.markdown("Define the parameters for your scenario. Type an existing Scenario Name to load and edit its data.")
+st.markdown("Define the parameters for your scenario. Type an existing Scenario Name to load it, or type a new name for a blank slate.")
 
-# Initialize session state for scenarios
+# --- INITIALIZE SESSION STATE ---
 if "scenarios" not in st.session_state:
     st.session_state.scenarios = {}
+
+# Initialize the specific widget keys so Streamlit can control them
+if "sn_input" not in st.session_state:
+    st.session_state.sn_input = ""
+if "mp_input" not in st.session_state:
+    st.session_state.mp_input = ""
+if "pu_input" not in st.session_state:
+    st.session_state.pu_input = "kg"
+if "pc_input" not in st.session_state:
+    st.session_state.pc_input = None
+if "table_key" not in st.session_state:
+    st.session_state.table_key = 0 # Used to force the table to clear
+
+# Handle success messages across reruns
+if "success_msg" in st.session_state and st.session_state.success_msg:
+    st.success(st.session_state.success_msg)
+    st.session_state.success_msg = "" # Clear it so it only shows once
+
+# --- CALLBACK FUNCTION ---
+def load_scenario_data():
+    """Triggered instantly when the Scenario Name text box changes."""
+    sn = st.session_state.sn_input
+    if sn in st.session_state.scenarios:
+        # Load existing data into the widgets
+        data = st.session_state.scenarios[sn]
+        st.session_state.mp_input = data["Product Name"]
+        st.session_state.pu_input = data["Unit"]
+        st.session_state.pc_input = data["Capacity"]
+    else:
+        # Force clear all widgets for a new scenario
+        st.session_state.mp_input = ""
+        st.session_state.pu_input = "kg"
+        st.session_state.pc_input = None
+    
+    # Increment table key to force the Data Editor to redraw
+    st.session_state.table_key += 1
+
 
 # --- 1. SCENARIO SELECTION ---
 st.header("1. Scenario Name")
 scenario_name = st.text_input(
     "Scenario Name (Type a new name to create, or an existing name to edit)", 
+    key="sn_input",
+    on_change=load_scenario_data,
     help="Press Enter after typing to load existing data or clear the board for a new scenario."
 )
-
-# Fetch existing data if the scenario already exists, otherwise return an empty dictionary
-existing_data = st.session_state.scenarios.get(scenario_name, {})
 
 st.divider()
 
@@ -27,21 +63,15 @@ st.header("2. Basic Information")
 
 col1, col2 = st.columns(2)
 with col1:
-    # Uses existing data if found, otherwise defaults to an empty string ""
-    main_product = st.text_input("Main Product Name", value=existing_data.get("Product Name", ""))
+    main_product = st.text_input("Main Product Name", key="mp_input")
 
 with col2:
     allowed_units = ["g", "kg", "t", "mL", "L", "m³", "kWh", "MWh", "GWh", "MMBtu"]
+    product_unit = st.selectbox("Main product unit", allowed_units, key="pu_input")
     
-    saved_unit = existing_data.get("Unit", "kg")
-    unit_index = allowed_units.index(saved_unit) if saved_unit in allowed_units else 1
-    
-    product_unit = st.selectbox("Main product unit", allowed_units, index=unit_index)
-    
-    capacity_label = f"Main product capacity ({product_unit}/year)"
-    # Uses existing data if found, otherwise defaults to None (empty box)
-    saved_capacity = existing_data.get("Capacity", None)
-    product_capacity = st.number_input(capacity_label, min_value=0.0, value=saved_capacity, step=1.0)
+    # The label updates dynamically based on the selectbox state
+    capacity_label = f"Main product capacity ({st.session_state.pu_input}/year)"
+    product_capacity = st.number_input(capacity_label, min_value=0.0, step=1.0, key="pc_input")
 
 st.divider()
 
@@ -49,14 +79,15 @@ st.divider()
 st.header("3. Process Variables")
 st.markdown("Add your process variables below. Click the **+** at the bottom of the table to add more rows.")
 
-if "Process Variables" in existing_data and existing_data["Process Variables"]:
-    df_vars = pd.DataFrame(existing_data["Process Variables"])
+# Determine what data to feed the table initially
+if scenario_name in st.session_state.scenarios:
+    df_vars = pd.DataFrame(st.session_state.scenarios[scenario_name]["Process Variables"])
 else:
-    # Defaults to an empty template if it's a new scenario
     df_vars = pd.DataFrame(columns=["Variable Name", "Unit", "Value"])
 
 edited_process_vars = st.data_editor(
     df_vars,
+    key=f"editor_{st.session_state.table_key}", # Unique key forces it to reset when we change scenarios
     num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
@@ -71,28 +102,34 @@ st.divider()
 
 # --- SAVE BUTTON & LOGIC ---
 if st.button("Save / Update Scenario", type="primary"):
-    if not scenario_name:
+    if not st.session_state.sn_input:
         st.error("Please provide a Scenario Name before saving.")
-    elif product_capacity is None:
+    elif st.session_state.pc_input is None:
         st.error("Please provide a Main Product Capacity before saving.")
     else:
         valid_vars = edited_process_vars.dropna(how="all")
         
-        is_update = scenario_name in st.session_state.scenarios
-        
-        # Save or overwrite the inputs without the Project Title
-        st.session_state.scenarios[scenario_name] = {
-            "Product Name": main_product,
-            "Unit": product_unit,
-            "Capacity": product_capacity,
-            "Capacity Label": f"{product_capacity} {product_unit}/year",
+        # Save the data
+        st.session_state.scenarios[st.session_state.sn_input] = {
+            "Product Name": st.session_state.mp_input,
+            "Unit": st.session_state.pu_input,
+            "Capacity": st.session_state.pc_input,
+            "Capacity Label": f"{st.session_state.pc_input} {st.session_state.pu_input}/year",
             "Process Variables": valid_vars.to_dict(orient="records")
         }
         
-        if is_update:
-            st.success(f"Scenario '{scenario_name}' successfully updated!")
-        else:
-            st.success(f"Scenario '{scenario_name}' successfully saved!")
+        # Set the success message to display after the wipe
+        st.session_state.success_msg = f"Scenario '{st.session_state.sn_input}' successfully saved!"
+        
+        # --- THE WIPE: Clear all fields for the next entry ---
+        st.session_state.sn_input = ""
+        st.session_state.mp_input = ""
+        st.session_state.pc_input = None
+        st.session_state.pu_input = "kg"
+        st.session_state.table_key += 1
+        
+        # Rerun the app instantly to show the empty fields
+        st.rerun()
 
 # --- SCENARIO COMPARISON TABLE ---
 st.header("Compiled Scenarios")
