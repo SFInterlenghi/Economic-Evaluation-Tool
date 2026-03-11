@@ -49,15 +49,15 @@ LANG_FACTORS = {
 
 # Project contingency factors keyed by (TRL, process_severity) → fraction
 PROJECT_CONTINGENCY: dict[tuple[str, str], float] = {
-    ("Industrial (8 or 9)", "Low"):    0.05,
-    ("Industrial (8 or 9)", "Medium"): 0.10,
-    ("Industrial (8 or 9)", "High"):   0.15,
-    ("Pilot (5 to 7)",       "Low"):    0.15,
-    ("Pilot (5 to 7)",       "Medium"): 0.20,
-    ("Pilot (5 to 7)",       "High"):   0.25,
-    ("Bench (3 or 4)",       "Low"):    0.20,
-    ("Bench (3 or 4)",       "Medium"): 0.25,
-    ("Bench (3 or 4)",       "High"):   0.30,
+    ("Industrial (8 or 9)", "Low"):    0.15,
+    ("Industrial (8 or 9)", "Medium"): 0.20,
+    ("Industrial (8 or 9)", "High"):   0.25,
+    ("Pilot (5 to 7)",       "Low"):    0.20,
+    ("Pilot (5 to 7)",       "Medium"): 0.25,
+    ("Pilot (5 to 7)",       "High"):   0.30,
+    ("Bench (3 or 4)",       "Low"):    0.25,
+    ("Bench (3 or 4)",       "Medium"): 0.30,
+    ("Bench (3 or 4)",       "High"):   0.35,
     ("Theoretical (1 or 2)", "Low"):    0.30,
     ("Theoretical (1 or 2)", "Medium"): 0.35,
     ("Theoretical (1 or 2)", "High"):   0.40,
@@ -1105,7 +1105,7 @@ st.divider()
 # ── Additional Fixed Costs ─────────────────────
 st.subheader("Additional Fixed Costs")
 
-admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0
+admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0*(1+office_pct_input)
 mfg_ov_ref_pct    = MFG_OVERHEAD.get(st.session_state.dm_severity, 0.006) * 100.0
 taxes_ins_ref_pct = TAXES_INSURANCE.get(st.session_state.dm_severity, 0.032) * 100.0
 patents_ref       = PATENTS_ROYALTIES.get((st.session_state.dm_trl, st.session_state.dm_prod_type))
