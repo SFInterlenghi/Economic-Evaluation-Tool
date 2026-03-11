@@ -611,6 +611,101 @@ with col_ai2:
     )
 st.divider()
 
+# ─────────────────────────────────────────────
+# Variable Costs
+# ─────────────────────────────────────────────
+st.header("Variable Costs")
+
+# ── Raw Materials ──────────────────────────────
+st.subheader("Raw Materials")
+
+RATE_UNITS  = list(RATE_TO_PRICE_UNIT.keys())   # e.g. ["g/h", "kg/h", ...]
+
+# Load existing raw-material rows for the current scenario (if any)
+existing_rm = (
+    st.session_state.scenarios
+    .get(st.session_state.sn_input, {})
+    .get("Raw Materials", [])
+)
+# Build the working DataFrame — always 50 rows so the editor never collapses
+_empty_rm = {"Name": "", "Unit": RATE_UNITS[0], "Price": 0.0, "Rate": 0.0}
+if existing_rm:
+    rm_df = pd.DataFrame(existing_rm).reindex(range(50), fill_value=None)
+    rm_df["Name"]  = rm_df["Name"].fillna("")
+    rm_df["Unit"]  = rm_df["Unit"].fillna(RATE_UNITS[0])
+    rm_df["Price"] = pd.to_numeric(rm_df["Price"], errors="coerce").fillna(0.0)
+    rm_df["Rate"]  = pd.to_numeric(rm_df["Rate"],  errors="coerce").fillna(0.0)
+else:
+    rm_df = pd.DataFrame([_empty_rm] * 50)
+
+# ── column layout mimicking the image ──────────
+# Name | Unit | Price value | Price unit (auto) | Rate value | Rate unit (auto = Unit)
+# We render the header row manually, then the data_editor with 4 editable cols.
+
+# Custom header using columns that mirror the editor proportions
+hcols = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5])
+hcols[0].markdown("**Name**")
+hcols[1].markdown("**Unit**")
+hcols[2].markdown("**Price**")
+hcols[3].markdown("**Price unit**")
+hcols[4].markdown("**Rate**")
+hcols[5].markdown("**Rate unit**")
+
+# Editable columns: Name, Unit, Price, Rate
+# Price unit and Rate unit are computed — shown as disabled companion columns
+rm_edited = st.data_editor(
+    rm_df[["Name", "Unit", "Price", "Rate"]],
+    key=f"rm_editor_{st.session_state.table_key}",
+    num_rows="fixed",
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Name":  st.column_config.TextColumn("Name",  width="large"),
+        "Unit":  st.column_config.SelectboxColumn(
+                     "Unit", options=RATE_UNITS, width="small"),
+        "Price": st.column_config.NumberColumn(
+                     "Price", min_value=0.0, step=0.01,
+                     format="%.4f", width="small"),
+        "Rate":  st.column_config.NumberColumn(
+                     "Rate",  min_value=0.0, step=0.01,
+                     format="%.5f", width="small"),
+    },
+)
+
+# Derive the two auto columns and compute the total
+rm_edited = rm_edited.copy()
+rm_edited["Price Unit"] = rm_edited["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
+rm_edited["Rate Unit"]  = rm_edited["Unit"]   # always the same as Unit
+
+# Only consider rows where Name is filled in
+rm_active = rm_edited[rm_edited["Name"].str.strip() != ""].copy()
+rm_active["Line Cost"] = rm_active["Price"] * rm_active["Rate"]
+total_raw_material_cost = rm_active["Line Cost"].sum()
+
+# Show the Price Unit and Rate Unit companion columns as read-only display
+# (rendered just below the editor, aligned to the same grid)
+if not rm_active.empty:
+    st.markdown("##### Active rows — auto-filled units")
+    display_df = rm_active[["Name", "Unit", "Price", "Price Unit", "Rate", "Rate Unit", "Line Cost"]].copy()
+    display_df["Price"]     = display_df["Price"].map(lambda x: f"{x:.4f}")
+    display_df["Rate"]      = display_df["Rate"].map(lambda x: f"{x:.5f}")
+    display_df["Line Cost"] = display_df["Line Cost"].map(fmt_curr)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+# Total row
+st.markdown("---")
+col_rm1, col_rm2 = st.columns([3, 1])
+with col_rm1:
+    st.markdown("**Total raw materials cost**")
+with col_rm2:
+    st.markdown(
+        f'<div style="text-align:right; font-size:1rem; font-weight:600;">'
+        f'{fmt_curr(total_raw_material_cost)}</div>',
+        unsafe_allow_html=True,
+    )
+
+st.divider()
+
 # Reference tables (PLANT_COST_INDEX, RATE_TO_PRICE_UNIT) are defined as
 # constants above and used programmatically — no UI section needed.
 
@@ -686,6 +781,9 @@ if st.button("Save / Update Scenario", type="primary"):
             # Additional information
             "Working Hours per Year":    working_hours,
             "Scaling Factor":            scaling_factor,
+            # Variable costs
+            "Raw Materials":             rm_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
+            "Total Raw Material Cost":   total_raw_material_cost,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
@@ -705,6 +803,7 @@ if st.session_state.scenarios:
             "Total Equip. Cost":fmt_curr(d["Total Equipment Costs"]),
             "ISBL+OSBL Cost":   fmt_curr(d["Project Costs ISBL+OSBL"]),
             "Project CAPEX":    fmt_curr(d.get("Project CAPEX", 0.0)),
+            "Raw Mat. Cost":    fmt_curr(d.get("Total Raw Material Cost", 0.0)),
             "TRL":              d["TRL"],
         }
         for name, d in st.session_state.scenarios.items()
