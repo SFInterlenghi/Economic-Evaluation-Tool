@@ -154,9 +154,8 @@ def reset_state(keys: dict = DEFAULTS):
     """Write every key in *keys* back to session_state, and wipe Lang field overrides."""
     for k, v in keys.items():
         st.session_state[k] = v
-    # Wipe any Lang field override values so they re-seed on next render
     for k in list(st.session_state.keys()):
-        if k.startswith("lf_"):
+        if k.startswith("val_") or k.startswith("w_"):
             del st.session_state[k]
     st.session_state.table_key = st.session_state.get("table_key", 0) + 1
 
@@ -192,41 +191,53 @@ def price_unit_for(rate_unit: str) -> str:
     return RATE_TO_PRICE_UNIT.get(rate_unit, "")
 
 
+LANG_FIELDS = list(LANG_FACTORS.keys())  # canonical field names in order
+
+def _seed_override_values():
+    """
+    Called when the user ticks 'Allow manual override'.
+    Reads the current equip_acq and writes a val_ key for every
+    Lang field.  These are plain state variables — NOT widget keys —
+    so Streamlit never overwrites them on widget init.
+    """
+    acq = st.session_state.get("equip_acq", 0.0)
+    idx = 0 if st.session_state.get("lang_utility", False) else 1
+    for field, factors in LANG_FACTORS.items():
+        vkey = f"val_{field.lower().replace(' ', '_')}"
+        st.session_state[vkey] = acq * factors[idx]
+
+
 def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0) -> float:
     """
     Lang Factors mode — override OFF:
         Read-only text_input showing the live computed Lang value.
-        The lf_ key is kept in sync so switching to override mode
-        starts from the correct value, not zero.
 
     Lang Factors mode — override ON:
-        Editable number_input. Label is green (✓ Lang) when the value
-        matches the computed Lang value, amber (⚠ overridden) when it differs.
+        Editable number_input whose *initial* value was seeded by
+        _seed_override_values() via the checkbox callback.
+        Stored in val_<field> (plain state, not a widget key), read
+        back via a widget key w_<field> so Streamlit never zeros it.
+        Label is green (✓ Lang) or amber (⚠ overridden).
 
     Manual mode:
-        Plain number_input bound to session_state via the field's ss_key.
+        Plain number_input bound to session_state via ss_key.
     """
-    ss_key = field.lower().replace(" ", "_")
-    lf_key = f"lf_{ss_key}"
+    ss_key  = field.lower().replace(" ", "_")
+    val_key = f"val_{ss_key}"   # plain storage key — written by callback
+    w_key   = f"w_{ss_key}"     # widget key — only used to read user input
 
     if st.session_state.oth_cost_src == "Lang Factors":
         lang_computed = lang_val(field, equip_acq)
         allow = st.session_state.get("allow_override", False)
 
-        # Always keep lf_ in sync with the computed value while override is OFF.
-        # This guarantees that when the user ticks the checkbox the widget
-        # initialises from the correct Lang value rather than 0.
         if not allow:
-            st.session_state[lf_key] = lang_computed
             st.text_input(f"{label}", value=fmt_curr(lang_computed), disabled=True)
             return lang_computed
 
-        # Override is ON — seed only if the key is genuinely absent
-        if lf_key not in st.session_state:
-            st.session_state[lf_key] = lang_computed
-
-        current_val   = st.session_state[lf_key]
-        is_overridden = abs(current_val - lang_computed) > 0.005
+        # Override ON — use val_key as the source of truth for the current value.
+        # val_key was already populated by _seed_override_values() callback.
+        stored = st.session_state.get(val_key, lang_computed)
+        is_overridden = abs(stored - lang_computed) > 0.005
 
         color = "#e67e00" if is_overridden else "#2e7d32"
         hint  = " ⚠ overridden" if is_overridden else " ✓ Lang"
@@ -235,14 +246,23 @@ def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0
             f'<b>{label} ($)</b>{hint}</p>',
             unsafe_allow_html=True,
         )
-        return st.number_input(
+
+        # Render number_input with value= drawn from val_key.
+        # on_change writes the widget's new value back into val_key.
+        def _sync(vk=val_key, wk=w_key):
+            st.session_state[vk] = st.session_state[wk]
+
+        result = st.number_input(
             label, min_value=0.0, step=step,
-            key=lf_key, label_visibility="collapsed",
+            value=stored,
+            key=w_key,
+            label_visibility="collapsed",
+            on_change=_sync,
         )
+        return result
 
     # Plain manual mode
     return st.number_input(f"{label} ($)", min_value=0.0, step=step, key=ss_key)
-
 
 
 # ─────────────────────────────────────────────
@@ -392,6 +412,7 @@ if is_lang:
     st.checkbox(
         "Allow manual override of Lang factor fields?",
         key="allow_override",
+        on_change=_seed_override_values,
         help="When checked, all Lang-computed fields become editable. "
              "Fields that differ from their Lang value are highlighted in amber.",
     )
