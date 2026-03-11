@@ -24,7 +24,7 @@ if "lang_utility" not in st.session_state: st.session_state.lang_utility = False
 
 # Decision Making Assistant
 if "dm_prod_type" not in st.session_state: st.session_state.dm_prod_type = "Basic Chemical"
-if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 or 9)" # Fixed to match Table 1 exactly
+if "dm_trl" not in st.session_state: st.session_state.dm_trl = "Industrial (8 or 9)"
 if "dm_info_avail" not in st.session_state: st.session_state.dm_info_avail = "High"
 if "dm_severity" not in st.session_state: st.session_state.dm_severity = "High"
 if "dm_mat_type" not in st.session_state: st.session_state.dm_mat_type = "Solids"
@@ -34,6 +34,15 @@ if "dm_plant_size" not in st.session_state: st.session_state.dm_plant_size = "La
 if "equip_acq" not in st.session_state: st.session_state.equip_acq = 0.0
 if "spare_parts" not in st.session_state: st.session_state.spare_parts = 0.0
 if "equip_setting" not in st.session_state: st.session_state.equip_setting = 0.0
+
+# Installation Costs Inputs
+if "piping" not in st.session_state: st.session_state.piping = 0.0
+if "civil" not in st.session_state: st.session_state.civil = 0.0
+if "steel" not in st.session_state: st.session_state.steel = 0.0
+if "instrumentals" not in st.session_state: st.session_state.instrumentals = 0.0
+if "electrical" not in st.session_state: st.session_state.electrical = 0.0
+if "insulation" not in st.session_state: st.session_state.insulation = 0.0
+if "paint" not in st.session_state: st.session_state.paint = 0.0
 
 
 # --- THE FIX: Clear fields at the TOP of the script before widgets are drawn ---
@@ -54,9 +63,19 @@ if st.session_state.get("clear_on_next_run", False):
     st.session_state.dm_mat_type = "Solids"
     st.session_state.dm_plant_size = "Large"
     
+    # Clear CAPEX Equipment Costs
     st.session_state.equip_acq = 0.0
     st.session_state.spare_parts = 0.0
     st.session_state.equip_setting = 0.0
+
+    # Clear CAPEX Installation Costs
+    st.session_state.piping = 0.0
+    st.session_state.civil = 0.0
+    st.session_state.steel = 0.0
+    st.session_state.instrumentals = 0.0
+    st.session_state.electrical = 0.0
+    st.session_state.insulation = 0.0
+    st.session_state.paint = 0.0
     
     st.session_state.table_key += 1
     st.session_state.clear_on_next_run = False
@@ -90,6 +109,14 @@ def load_scenario_data():
         st.session_state.equip_acq = data.get("Equipment Acquisition", 0.0)
         st.session_state.spare_parts = data.get("Spare Parts", 0.0)
         st.session_state.equip_setting = data.get("Equipment Setting", 0.0)
+
+        st.session_state.piping = data.get("Piping", 0.0)
+        st.session_state.civil = data.get("Civil", 0.0)
+        st.session_state.steel = data.get("Steel", 0.0)
+        st.session_state.instrumentals = data.get("Instrumentals", 0.0)
+        st.session_state.electrical = data.get("Electrical", 0.0)
+        st.session_state.insulation = data.get("Insulation", 0.0)
+        st.session_state.paint = data.get("Paint", 0.0)
     else:
         st.session_state.mp_input = ""
         st.session_state.pu_input = "kg"
@@ -108,6 +135,14 @@ def load_scenario_data():
         st.session_state.equip_acq = 0.0
         st.session_state.spare_parts = 0.0
         st.session_state.equip_setting = 0.0
+
+        st.session_state.piping = 0.0
+        st.session_state.civil = 0.0
+        st.session_state.steel = 0.0
+        st.session_state.instrumentals = 0.0
+        st.session_state.electrical = 0.0
+        st.session_state.insulation = 0.0
+        st.session_state.paint = 0.0
         
     st.session_state.table_key += 1
 
@@ -287,8 +322,9 @@ st.divider()
 
 # --- 7. PROJECT CAPEX ---
 st.header("7. Project CAPEX")
-st.subheader("Equipment Costs")
 
+# --- 7.1 Equipment Costs ---
+st.subheader("Equipment Costs")
 col_cap1, col_cap2, col_cap3 = st.columns(3)
 
 # 1. Equipment Acquisition (Always manual input in this proof of concept)
@@ -298,9 +334,10 @@ with col_cap1:
 # 2. Spare Parts & Equipment Setting
 lang_idx = 0 if st.session_state.lang_utility else 1
 lang_table = reference_tables["16. Lang Cost Factors"]
+is_lang = (st.session_state.oth_cost_src == "Lang Factors")
 
 with col_cap2:
-    if st.session_state.oth_cost_src == "Lang Factors":
+    if is_lang:
         factor_spare = lang_table["Spare Parts"].iloc[lang_idx]
         spare_parts = equip_acq * factor_spare
         st.number_input("Spare Parts ($) [Lang Factored]", value=float(spare_parts), disabled=True)
@@ -308,7 +345,7 @@ with col_cap2:
         spare_parts = st.number_input("Spare Parts ($)", min_value=0.0, step=100.0, key="spare_parts")
 
 with col_cap3:
-    if st.session_state.oth_cost_src == "Lang Factors":
+    if is_lang:
         factor_setting = lang_table["Equipment Setting"].iloc[lang_idx]
         equip_setting = equip_acq * factor_setting
         st.number_input("Equipment Setting ($) [Lang Factored]", value=float(equip_setting), disabled=True)
@@ -323,11 +360,9 @@ unsched_table = reference_tables["1. Unscheduled Equipment"]
 current_trl = st.session_state.dm_trl
 current_info = st.session_state.dm_info_avail
 
-# Extract the specific row matching the current TRL
 row_match = unsched_table[unsched_table["TRL / Info Availability"] == current_trl]
 if not row_match.empty:
     unsched_pct = row_match[current_info].values[0]
-    # Replace None/NaN with 0.0
     if pd.isna(unsched_pct) or unsched_pct is None:
         unsched_pct = 0.0
 else:
@@ -341,12 +376,81 @@ col_cap4, col_cap5, col_cap6 = st.columns(3)
 
 with col_cap4:
     st.number_input("Base Equipment Costs ($)", value=float(base_equip_costs), disabled=True, help="Sum of Acquisition, Spare Parts, and Setting")
-
 with col_cap5:
     st.number_input("Unscheduled Equipment (%)", value=float(unsched_pct * 100), disabled=True, help="Pulled from Reference Table 1")
-
 with col_cap6:
     st.number_input("Total Equipment Costs ($)", value=float(total_equip_costs), disabled=True)
+
+st.markdown("---")
+
+# --- 7.2 Installation Costs ---
+st.subheader("Installation Costs")
+col_inst1, col_inst2, col_inst3 = st.columns(3)
+
+with col_inst1:
+    if is_lang:
+        factor_piping = lang_table["Piping"].iloc[lang_idx]
+        piping = equip_acq * factor_piping
+        st.number_input("Piping ($) [Lang Factored]", value=float(piping), disabled=True)
+    else:
+        piping = st.number_input("Piping ($)", min_value=0.0, step=100.0, key="piping")
+
+with col_inst2:
+    if is_lang:
+        factor_civil = lang_table["Civil"].iloc[lang_idx]
+        civil = equip_acq * factor_civil
+        st.number_input("Civil ($) [Lang Factored]", value=float(civil), disabled=True)
+    else:
+        civil = st.number_input("Civil ($)", min_value=0.0, step=100.0, key="civil")
+
+with col_inst3:
+    if is_lang:
+        factor_steel = lang_table["Steel"].iloc[lang_idx]
+        steel = equip_acq * factor_steel
+        st.number_input("Steel ($) [Lang Factored]", value=float(steel), disabled=True)
+    else:
+        steel = st.number_input("Steel ($)", min_value=0.0, step=100.0, key="steel")
+
+col_inst4, col_inst5, col_inst6 = st.columns(3)
+
+with col_inst4:
+    if is_lang:
+        factor_instrumentals = lang_table["Instrumentals"].iloc[lang_idx]
+        instrumentals = equip_acq * factor_instrumentals
+        st.number_input("Instrumentals ($) [Lang Factored]", value=float(instrumentals), disabled=True)
+    else:
+        instrumentals = st.number_input("Instrumentals ($)", min_value=0.0, step=100.0, key="instrumentals")
+
+with col_inst5:
+    if is_lang:
+        factor_electrical = lang_table["Electrical"].iloc[lang_idx]
+        electrical = equip_acq * factor_electrical
+        st.number_input("Electrical ($) [Lang Factored]", value=float(electrical), disabled=True)
+    else:
+        electrical = st.number_input("Electrical ($)", min_value=0.0, step=100.0, key="electrical")
+
+with col_inst6:
+    if is_lang:
+        factor_insulation = lang_table["Insulation"].iloc[lang_idx]
+        insulation = equip_acq * factor_insulation
+        st.number_input("Insulation ($) [Lang Factored]", value=float(insulation), disabled=True)
+    else:
+        insulation = st.number_input("Insulation ($)", min_value=0.0, step=100.0, key="insulation")
+
+col_inst7, col_inst8, col_inst9 = st.columns(3)
+
+with col_inst7:
+    if is_lang:
+        factor_paint = lang_table["Paint"].iloc[lang_idx]
+        paint = equip_acq * factor_paint
+        st.number_input("Paint ($) [Lang Factored]", value=float(paint), disabled=True)
+    else:
+        paint = st.number_input("Paint ($)", min_value=0.0, step=100.0, key="paint")
+
+total_inst_costs = piping + civil + steel + instrumentals + electrical + insulation + paint
+
+with col_inst8:
+    st.metric("Total Installation Costs", f"${total_inst_costs:,.2f}")
 
 st.divider()
 
@@ -382,7 +486,17 @@ if st.button("Save / Update Scenario", type="primary"):
             "Equipment Setting": equip_setting,
             "Base Equipment Costs": base_equip_costs,
             "Unscheduled Equip Pct": unsched_pct,
-            "Total Equipment Costs": total_equip_costs
+            "Total Equipment Costs": total_equip_costs,
+            
+            # Installation Costs Saving
+            "Piping": piping,
+            "Civil": civil,
+            "Steel": steel,
+            "Instrumentals": instrumentals,
+            "Electrical": electrical,
+            "Insulation": insulation,
+            "Paint": paint,
+            "Total Installation Costs": total_inst_costs
         }
         
         st.session_state.success_msg = f"Scenario '{st.session_state.sn_input}' successfully saved!"
@@ -399,8 +513,8 @@ if st.session_state.scenarios:
             "Product": data["Product Name"],
             "Eq. Cost": data["Equipment Costs Source"],
             "Total Equip. Cost": f"${data['Total Equipment Costs']:,.2f}",
-            "TRL": data["TRL"],
-            "Severity": data["Process Severity"]
+            "Total Inst. Cost": f"${data['Total Installation Costs']:,.2f}",
+            "TRL": data["TRL"]
         })
     st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
     
