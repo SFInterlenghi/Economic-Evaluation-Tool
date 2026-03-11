@@ -1106,7 +1106,7 @@ st.divider()
 # ── Additional Fixed Costs ─────────────────────
 st.subheader("Additional Fixed Costs")
 
-admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0*(1+office_pct)
+admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0 * (1 + office_pct)
 mfg_ov_ref_pct    = MFG_OVERHEAD.get(st.session_state.dm_severity, 0.006) * 100.0
 taxes_ins_ref_pct = TAXES_INSURANCE.get(st.session_state.dm_severity, 0.032) * 100.0
 patents_ref       = PATENTS_ROYALTIES.get((st.session_state.dm_trl, st.session_state.dm_prod_type))
@@ -1225,6 +1225,38 @@ indirect_fixed_costs = (admin_costs_pct * olc
 
 direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
 total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
+
+# ── AFC Debug Breakdown ───────────────────────
+with st.expander("🔍 AFC Formula Breakdown (for validation)", expanded=True):
+    st.markdown("**AFC = admin_ov×OLC + (mfg_ov + taxes_ins)×CAPEX + patents×OPEX**")
+    col_d1, col_d2, col_d3 = st.columns(3)
+    with col_d1:
+        st.metric("Admin overhead %", f"{admin_ov_pct*100:.4f}%")
+        st.metric("Admin overhead × OLC", fmt_curr(admin_ov_pct * olc))
+        st.metric("OLC", fmt_curr(olc))
+    with col_d2:
+        st.metric("Mfg overhead %", f"{mfg_ov_pct*100:.4f}%")
+        st.metric("Taxes & insurance %", f"{taxes_ins_pct*100:.4f}%")
+        st.metric("(Mfg ov + Taxes ins) × CAPEX", fmt_curr((mfg_ov_pct + taxes_ins_pct) * project_capex))
+        st.metric("Project CAPEX", fmt_curr(project_capex))
+    with col_d3:
+        st.metric("Patents %", f"{patents_pct*100:.4f}%")
+        st.metric("Patents × OPEX", fmt_curr(patents_pct * opex))
+        st.metric("OPEX (resolved)", fmt_curr(opex))
+    st.markdown("---")
+    col_d4, col_d5 = st.columns(2)
+    with col_d4:
+        st.metric("Direct variable costs (TVC)", fmt_curr(direct_var_costs))
+        st.metric("Total labor costs", fmt_curr(total_labor_costs))
+        st.metric("Supply & maintenance", fmt_curr(supply_maint_costs))
+        st.metric("OLC coeff (admin_ov + admin_costs)", f"{_olc_coeff*100:.4f}%")
+        st.metric("OLC coeff × OLC", fmt_curr(_olc_coeff * olc))
+    with col_d5:
+        st.metric("CAPEX coeff (mfg_ov + taxes_ins + mfg_costs)", f"{_capex_coeff*100:.4f}%")
+        st.metric("CAPEX coeff × CAPEX", fmt_curr(_capex_coeff * project_capex))
+        st.metric("OPEX denominator (1 - patents - dist - r&d)", f"{_denominator:.6f}")
+        st.metric("OPEX numerator", fmt_curr(_numerator))
+        st.metric("**AFC**", fmt_curr(afc))
 
 st.markdown("---")
 col_afc1, col_afc2 = st.columns([3, 2])
