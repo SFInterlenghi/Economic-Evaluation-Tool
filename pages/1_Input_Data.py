@@ -619,90 +619,65 @@ st.header("Variable Costs")
 # ── Raw Materials ──────────────────────────────
 st.subheader("Raw Materials")
 
-RATE_UNITS  = list(RATE_TO_PRICE_UNIT.keys())   # e.g. ["g/h", "kg/h", ...]
+RATE_UNITS = list(RATE_TO_PRICE_UNIT.keys())
 
-# Load existing raw-material rows for the current scenario (if any)
+# Load existing rows for the current scenario (if any)
 existing_rm = (
     st.session_state.scenarios
     .get(st.session_state.sn_input, {})
     .get("Raw Materials", [])
 )
-# Build the working DataFrame — always 50 rows so the editor never collapses
-_empty_rm = {"Name": "", "Unit": RATE_UNITS[0], "Price": 0.0, "Rate": 0.0}
+
+# Build starting DataFrame — one blank row so the editor starts ready to fill
+_blank_row = {"Name": None, "Unit": RATE_UNITS[0], "Price Unit": "", "Price": 0.0, "Rate": 0.0, "Rate Unit": ""}
 if existing_rm:
-    rm_df = pd.DataFrame(existing_rm).reindex(range(50), fill_value=None)
-    rm_df["Name"]  = rm_df["Name"].fillna("")
-    rm_df["Unit"]  = rm_df["Unit"].fillna(RATE_UNITS[0])
-    rm_df["Price"] = pd.to_numeric(rm_df["Price"], errors="coerce").fillna(0.0)
-    rm_df["Rate"]  = pd.to_numeric(rm_df["Rate"],  errors="coerce").fillna(0.0)
+    rm_df = pd.DataFrame(existing_rm)
+    rm_df["Price Unit"] = rm_df["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
+    rm_df["Rate Unit"]  = rm_df["Unit"]
+    rm_df = rm_df[["Name", "Unit", "Price Unit", "Price", "Rate", "Rate Unit"]]
 else:
-    rm_df = pd.DataFrame([_empty_rm] * 50)
+    rm_df = pd.DataFrame([_blank_row])
 
-# ── column layout mimicking the image ──────────
-# Name | Unit | Price value | Price unit (auto) | Rate value | Rate unit (auto = Unit)
-# We render the header row manually, then the data_editor with 4 editable cols.
-
-# Custom header using columns that mirror the editor proportions
-hcols = st.columns([3, 1.5, 1.5, 1.5, 1.5, 1.5])
-hcols[0].markdown("**Name**")
-hcols[1].markdown("**Unit**")
-hcols[2].markdown("**Price**")
-hcols[3].markdown("**Price unit**")
-hcols[4].markdown("**Rate**")
-hcols[5].markdown("**Rate unit**")
-
-# Editable columns: Name, Unit, Price, Rate
-# Price unit and Rate unit are computed — shown as disabled companion columns
 rm_edited = st.data_editor(
-    rm_df[["Name", "Unit", "Price", "Rate"]],
+    rm_df,
     key=f"rm_editor_{st.session_state.table_key}",
-    num_rows="fixed",
+    num_rows="dynamic",
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Name":  st.column_config.TextColumn("Name",  width="large"),
-        "Unit":  st.column_config.SelectboxColumn(
-                     "Unit", options=RATE_UNITS, width="small"),
-        "Price": st.column_config.NumberColumn(
-                     "Price", min_value=0.0, step=0.01,
-                     format="%.4f", width="small"),
-        "Rate":  st.column_config.NumberColumn(
-                     "Rate",  min_value=0.0, step=0.01,
-                     format="%.5f", width="small"),
+        "Name":       st.column_config.TextColumn("Name",      width="large"),
+        "Unit":       st.column_config.SelectboxColumn(
+                          "Unit", options=RATE_UNITS,          width="small"),
+        "Price Unit": st.column_config.TextColumn("Price Unit", width="small",
+                          disabled=True),
+        "Price":      st.column_config.NumberColumn(
+                          "Price", min_value=0.0, step=0.01,
+                          format="%.4f",                       width="small"),
+        "Rate":       st.column_config.NumberColumn(
+                          "Rate",  min_value=0.0, step=0.01,
+                          format="%.5f",                       width="small"),
+        "Rate Unit":  st.column_config.TextColumn("Rate Unit", width="small",
+                          disabled=True),
     },
 )
 
-# Derive the two auto columns and compute the total
+# Recompute the auto columns from the latest Unit selection
 rm_edited = rm_edited.copy()
 rm_edited["Price Unit"] = rm_edited["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
-rm_edited["Rate Unit"]  = rm_edited["Unit"]   # always the same as Unit
+rm_edited["Rate Unit"]  = rm_edited["Unit"]
 
-# Only consider rows where Name is filled in
-rm_active = rm_edited[rm_edited["Name"].str.strip() != ""].copy()
-rm_active["Line Cost"] = rm_active["Price"] * rm_active["Rate"]
+# Active rows = rows where Name is filled
+rm_active = rm_edited[rm_edited["Name"].notna() & (rm_edited["Name"].str.strip() != "")].copy()
+rm_active["Line Cost"] = rm_active["Price"] * rm_active["Rate"] * working_hours
 total_raw_material_cost = rm_active["Line Cost"].sum()
 
-# Show the Price Unit and Rate Unit companion columns as read-only display
-# (rendered just below the editor, aligned to the same grid)
-if not rm_active.empty:
-    st.markdown("##### Active rows — auto-filled units")
-    display_df = rm_active[["Name", "Unit", "Price", "Price Unit", "Rate", "Rate Unit", "Line Cost"]].copy()
-    display_df["Price"]     = display_df["Price"].map(lambda x: f"{x:.4f}")
-    display_df["Rate"]      = display_df["Rate"].map(lambda x: f"{x:.5f}")
-    display_df["Line Cost"] = display_df["Line Cost"].map(fmt_curr)
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-# Total row
+# Total
 st.markdown("---")
-col_rm1, col_rm2 = st.columns([3, 1])
+col_rm1, col_rm2 = st.columns([4, 1])
 with col_rm1:
     st.markdown("**Total raw materials cost**")
 with col_rm2:
-    st.markdown(
-        f'<div style="text-align:right; font-size:1rem; font-weight:600;">'
-        f'{fmt_curr(total_raw_material_cost)}</div>',
-        unsafe_allow_html=True,
-    )
+    st.metric(label="", value=fmt_curr(total_raw_material_cost))
 
 st.divider()
 
