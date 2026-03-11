@@ -130,23 +130,9 @@ DEFAULTS = {
     "eng_ho":          0.0,
     "ga_overheads":    0.0,
     "contract_fee":    0.0,
-    # Lang override values (None = use computed Lang value, float = user-edited)
-    "lo_spare_parts":            None,
-    "lo_equipment_setting":      None,
-    "lo_piping":                 None,
-    "lo_civil":                  None,
-    "lo_steel":                  None,
-    "lo_instrumentals":          None,
-    "lo_electrical":             None,
-    "lo_insulation":             None,
-    "lo_paint":                  None,
-    "lo_field_office_staff":     None,
-    "lo_construction_indirects": None,
-    "lo_freight":                None,
-    "lo_taxes_and_permits":      None,
-    "lo_engineering_and_ho":     None,
-    "lo_ga_overheads":           None,
-    "lo_contract_fee":           None,
+    # Lang override support
+    "allow_override":       False,   # master switch for manual editing of Lang fields
+    "lang_seeded_acq":      None,    # equip_acq value used for last Lang seed
     # CAPEX calculations
     "databank_year":   2022,
     "analysis_year":   PCI_YEARS[-1],
@@ -165,14 +151,23 @@ def fmt_curr(val: float) -> str:
 
 
 def reset_state(keys: dict = DEFAULTS):
-    """Write every key in *keys* back to session_state."""
+    """Write every key in *keys* back to session_state, and wipe Lang field overrides."""
     for k, v in keys.items():
         st.session_state[k] = v
-    # Clear all Lang override keys so they re-seed from computed values
+    # Wipe any Lang field override values so they re-seed on next render
     for k in list(st.session_state.keys()):
-        if k.startswith("lo_"):
-            st.session_state[k] = None
+        if k.startswith("lf_"):
+            del st.session_state[k]
     st.session_state.table_key = st.session_state.get("table_key", 0) + 1
+
+
+def _reseed_lang_fields(equip_acq: float):
+    """Overwrite all lf_ keys with freshly computed Lang values for equip_acq."""
+    idx = 0 if st.session_state.lang_utility else 1
+    for field, factors in LANG_FACTORS.items():
+        key = f"lf_{field.lower().replace(' ', '_')}"
+        st.session_state[key] = equip_acq * factors[idx]
+    st.session_state.lang_seeded_acq = equip_acq
 
 
 def lang_val(field: str, equip_acq: float) -> float:
@@ -182,15 +177,10 @@ def lang_val(field: str, equip_acq: float) -> float:
 
 
 def get_pci(year: int) -> float | None:
-    """Return the Plant Cost Index for *year*, or None if not available."""
     return PLANT_COST_INDEX.get(year)
 
 
 def pci_escalate(base_cost: float, base_year: int, target_year: int) -> float | None:
-    """
-    Escalate *base_cost* from *base_year* to *target_year* using the Plant Cost Index.
-    Returns None when either year is missing from the table.
-    """
     pci_base   = PLANT_COST_INDEX.get(base_year)
     pci_target = PLANT_COST_INDEX.get(target_year)
     if pci_base and pci_target:
@@ -199,31 +189,46 @@ def pci_escalate(base_cost: float, base_year: int, target_year: int) -> float | 
 
 
 def price_unit_for(rate_unit: str) -> str:
-    """Return the price unit that corresponds to *rate_unit*, or an empty string."""
     return RATE_TO_PRICE_UNIT.get(rate_unit, "")
 
 
 def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0) -> float:
     """
-    When Lang Factors mode is active: render an editable number_input pre-filled
-    with the Lang-computed value. If the user changes it, highlight the label in
-    amber via custom CSS so it's clear the value was overridden.
-    When manual mode: render a plain number_input bound to session_state.
+    Lang Factors mode
+    -----------------
+    • If 'Allow manual override' is OFF: fields are disabled, always showing the
+      computed Lang value. Changing equip_acq instantly updates all fields.
+    • If 'Allow manual override' is ON: fields become editable number_inputs.
+      A label badge shows ✓ Lang (green) or ⚠ overridden (amber) depending on
+      whether the user's value differs from the current Lang computation.
+
+    Manual mode
+    -----------
+    Plain number_input bound directly to session_state.
     """
-    ss_key     = field.lower().replace(" ", "_")          # e.g. "spare_parts"
-    lo_key     = f"lo_{ss_key}"                           # override tracker key
+    ss_key = field.lower().replace(" ", "_")   # e.g. "spare_parts"
+    lf_key = f"lf_{ss_key}"                    # Lang field value key
 
     if st.session_state.oth_cost_src == "Lang Factors":
         lang_computed = lang_val(field, equip_acq)
+        allow = st.session_state.get("allow_override", False)
 
-        # Seed the override key the first time (or when it's been cleared)
-        if st.session_state.get(lo_key) is None:
-            st.session_state[lo_key] = lang_computed
+        if not allow:
+            # Always show live Lang value, no editing
+            st.text_input(f"{label}", value=fmt_curr(lang_computed), disabled=True,
+                          label_visibility="visible")
+            # Keep lf_ in sync so override mode starts from current Lang value
+            st.session_state[lf_key] = lang_computed
+            return lang_computed
 
-        current_val = st.session_state[lo_key]
+        # Override mode — seed lf_ key if missing or if equip_acq changed and
+        # the field hasn't been manually touched since the last seed
+        if lf_key not in st.session_state:
+            st.session_state[lf_key] = lang_computed
+
+        current_val   = st.session_state[lf_key]
         is_overridden = abs(current_val - lang_computed) > 0.005
 
-        # Color the label amber when overridden, green when matching Lang
         color = "#e67e00" if is_overridden else "#2e7d32"
         hint  = " ⚠ overridden" if is_overridden else " ✓ Lang"
         st.markdown(
@@ -231,18 +236,14 @@ def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0
             f'<b>{label} ($)</b>{hint}</p>',
             unsafe_allow_html=True,
         )
-
-        new_val = st.number_input(
-            label,            # actual widget label (hidden behind custom one above)
-            min_value=0.0, step=step,
-            value=current_val,
-            key=lo_key,
-            label_visibility="collapsed",
+        return st.number_input(
+            label, min_value=0.0, step=step,
+            key=lf_key, label_visibility="collapsed",
         )
-        return new_val
 
     # Plain manual mode
     return st.number_input(f"{label} ($)", min_value=0.0, step=step, key=ss_key)
+
 
 
 # ─────────────────────────────────────────────
@@ -303,23 +304,7 @@ def load_scenario_data():
         "eng_ho":          ("Engineering and HO",      0.0),
         "ga_overheads":    ("GA Overheads",            0.0),
         "contract_fee":    ("Contract Fee",            0.0),
-        # Lang overrides (None means "use computed")
-        "lo_spare_parts":            ("lo_spare_parts",            None),
-        "lo_equipment_setting":      ("lo_equipment_setting",      None),
-        "lo_piping":                 ("lo_piping",                 None),
-        "lo_civil":                  ("lo_civil",                  None),
-        "lo_steel":                  ("lo_steel",                  None),
-        "lo_instrumentals":          ("lo_instrumentals",          None),
-        "lo_electrical":             ("lo_electrical",             None),
-        "lo_insulation":             ("lo_insulation",             None),
-        "lo_paint":                  ("lo_paint",                  None),
-        "lo_field_office_staff":     ("lo_field_office_staff",     None),
-        "lo_construction_indirects": ("lo_construction_indirects", None),
-        "lo_freight":                ("lo_freight",                None),
-        "lo_taxes_and_permits":      ("lo_taxes_and_permits",      None),
-        "lo_engineering_and_ho":     ("lo_engineering_and_ho",     None),
-        "lo_ga_overheads":           ("lo_ga_overheads",           None),
-        "lo_contract_fee":           ("lo_contract_fee",           None),
+        "allow_override":  ("Allow Override",          False),
         "databank_year":   ("Databank Year",           2022),
         "analysis_year":   ("Year of Analysis",        PCI_YEARS[-1]),
         "proj_location":   ("Project Location",        "Brazil"),
@@ -332,6 +317,7 @@ def load_scenario_data():
         st.session_state[ss_key] = data.get(data_key, default)
 
     st.session_state.table_key += 1
+    st.session_state.lang_seeded_acq = None  # force re-seed on next render
 
 
 # ─────────────────────────────────────────────
@@ -400,7 +386,26 @@ st.divider()
 
 # 7. Project CAPEX
 st.header("7. Project CAPEX")
-equip_acq = st.session_state.equip_acq   # convenience alias
+
+is_lang = st.session_state.oth_cost_src == "Lang Factors"
+
+# Show the override checkbox only when Lang Factors is active
+if is_lang:
+    st.checkbox(
+        "Allow manual override of Lang factor fields?",
+        key="allow_override",
+        help="When checked, all Lang-computed fields become editable. "
+             "Fields that differ from their Lang value are highlighted in amber.",
+    )
+    # If override is OFF, re-seed all lf_ values whenever equip_acq changes
+    # so that changing Equipment Acquisition always flows through immediately.
+    if not st.session_state.allow_override:
+        current_acq = st.session_state.get("equip_acq", 0.0)
+        if st.session_state.get("lang_seeded_acq") != current_acq:
+            _reseed_lang_fields(current_acq)
+else:
+    # Leaving Lang mode — clear any stale lf_ values
+    st.session_state.allow_override = False
 
 # 7.1 Equipment Costs
 st.subheader("Equipment Costs")
@@ -656,6 +661,7 @@ if st.button("Save / Update Scenario", type="primary"):
             "Total Non-Field Costs":     total_non_field_costs,
             "Project Costs ISBL+OSBL":   project_costs_isbl_osbl,
             # CAPEX calculations
+            "Allow Override":            st.session_state.allow_override,
             "Contingency Pct":           contingency_pct,
             "Databank Year":             int(databank_year_input),
             "Year of Analysis":          effective_analysis_year,
@@ -668,23 +674,6 @@ if st.button("Save / Update Scenario", type="primary"):
             # Additional information
             "Working Hours per Year":    working_hours,
             "Scaling Factor":            scaling_factor,
-            # Lang overrides (persist user edits)
-            "lo_spare_parts":            st.session_state.get("lo_spare_parts"),
-            "lo_equipment_setting":      st.session_state.get("lo_equipment_setting"),
-            "lo_piping":                 st.session_state.get("lo_piping"),
-            "lo_civil":                  st.session_state.get("lo_civil"),
-            "lo_steel":                  st.session_state.get("lo_steel"),
-            "lo_instrumentals":          st.session_state.get("lo_instrumentals"),
-            "lo_electrical":             st.session_state.get("lo_electrical"),
-            "lo_insulation":             st.session_state.get("lo_insulation"),
-            "lo_paint":                  st.session_state.get("lo_paint"),
-            "lo_field_office_staff":     st.session_state.get("lo_field_office_staff"),
-            "lo_construction_indirects": st.session_state.get("lo_construction_indirects"),
-            "lo_freight":                st.session_state.get("lo_freight"),
-            "lo_taxes_and_permits":      st.session_state.get("lo_taxes_and_permits"),
-            "lo_engineering_and_ho":     st.session_state.get("lo_engineering_and_ho"),
-            "lo_ga_overheads":           st.session_state.get("lo_ga_overheads"),
-            "lo_contract_fee":           st.session_state.get("lo_contract_fee"),
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
