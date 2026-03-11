@@ -107,10 +107,10 @@ DEFAULTS = {
     "lang_utility":    False,
     "dm_prod_type":    "Basic Chemical",
     "dm_trl":          "Industrial (8 or 9)",
-    "dm_info_avail":   "High",
-    "dm_severity":     "High",
-    "dm_mat_type":     "Solids",
-    "dm_plant_size":   "Large",
+    "dm_info_avail":   "Medium",
+    "dm_severity":     "Medium",
+    "dm_mat_type":     "Fluids",
+    "dm_plant_size":   "Medium",
     # CAPEX
     "equip_acq":       0.0,
     "spare_parts":     0.0,
@@ -130,6 +130,23 @@ DEFAULTS = {
     "eng_ho":          0.0,
     "ga_overheads":    0.0,
     "contract_fee":    0.0,
+    # Lang override values (None = use computed Lang value, float = user-edited)
+    "lo_spare_parts":            None,
+    "lo_equipment_setting":      None,
+    "lo_piping":                 None,
+    "lo_civil":                  None,
+    "lo_steel":                  None,
+    "lo_instrumentals":          None,
+    "lo_electrical":             None,
+    "lo_insulation":             None,
+    "lo_paint":                  None,
+    "lo_field_office_staff":     None,
+    "lo_construction_indirects": None,
+    "lo_freight":                None,
+    "lo_taxes_and_permits":      None,
+    "lo_engineering_and_ho":     None,
+    "lo_ga_overheads":           None,
+    "lo_contract_fee":           None,
     # CAPEX calculations
     "databank_year":   2022,
     "analysis_year":   PCI_YEARS[-1],
@@ -151,6 +168,10 @@ def reset_state(keys: dict = DEFAULTS):
     """Write every key in *keys* back to session_state."""
     for k, v in keys.items():
         st.session_state[k] = v
+    # Clear all Lang override keys so they re-seed from computed values
+    for k in list(st.session_state.keys()):
+        if k.startswith("lo_"):
+            st.session_state[k] = None
     st.session_state.table_key = st.session_state.get("table_key", 0) + 1
 
 
@@ -182,14 +203,46 @@ def price_unit_for(rate_unit: str) -> str:
     return RATE_TO_PRICE_UNIT.get(rate_unit, "")
 
 
-def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0):
-    """Render either a disabled Lang-factored text input or a number_input widget."""
+def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0) -> float:
+    """
+    When Lang Factors mode is active: render an editable number_input pre-filled
+    with the Lang-computed value. If the user changes it, highlight the label in
+    amber via custom CSS so it's clear the value was overridden.
+    When manual mode: render a plain number_input bound to session_state.
+    """
+    ss_key     = field.lower().replace(" ", "_")          # e.g. "spare_parts"
+    lo_key     = f"lo_{ss_key}"                           # override tracker key
+
     if st.session_state.oth_cost_src == "Lang Factors":
-        value = lang_val(field, equip_acq)
-        st.text_input(f"{label} [Lang Factored]", value=fmt_curr(value), disabled=True)
-        return value
-    return st.number_input(f"{label} ($)", min_value=0.0, step=step,
-                           key=field.lower().replace(" ", "_"))
+        lang_computed = lang_val(field, equip_acq)
+
+        # Seed the override key the first time (or when it's been cleared)
+        if st.session_state.get(lo_key) is None:
+            st.session_state[lo_key] = lang_computed
+
+        current_val = st.session_state[lo_key]
+        is_overridden = abs(current_val - lang_computed) > 0.005
+
+        # Color the label amber when overridden, green when matching Lang
+        color = "#e67e00" if is_overridden else "#2e7d32"
+        hint  = " ⚠ overridden" if is_overridden else " ✓ Lang"
+        st.markdown(
+            f'<p style="margin-bottom:0px; font-size:0.85rem; color:{color};">'
+            f'<b>{label} ($)</b>{hint}</p>',
+            unsafe_allow_html=True,
+        )
+
+        new_val = st.number_input(
+            label,            # actual widget label (hidden behind custom one above)
+            min_value=0.0, step=step,
+            value=current_val,
+            key=lo_key,
+            label_visibility="collapsed",
+        )
+        return new_val
+
+    # Plain manual mode
+    return st.number_input(f"{label} ($)", min_value=0.0, step=step, key=ss_key)
 
 
 # ─────────────────────────────────────────────
@@ -228,10 +281,10 @@ def load_scenario_data():
         "lang_utility":    ("Contains Utility Systems",False),
         "dm_prod_type":    ("Product Type",            "Basic Chemical"),
         "dm_trl":          ("TRL",                     "Industrial (8 or 9)"),
-        "dm_info_avail":   ("Info Availability",       "High"),
-        "dm_severity":     ("Process Severity",        "High"),
-        "dm_mat_type":     ("Material Handled",        "Solids"),
-        "dm_plant_size":   ("Plant Size",              "Large"),
+        "dm_info_avail":   ("Info Availability",       "Medium"),
+        "dm_severity":     ("Process Severity",        "Medium"),
+        "dm_mat_type":     ("Material Handled",        "Fluids"),
+        "dm_plant_size":   ("Plant Size",              "Medium"),
         "equip_acq":       ("Equipment Acquisition",   0.0),
         "spare_parts":     ("Spare Parts",             0.0),
         "equip_setting":   ("Equipment Setting",       0.0),
@@ -250,6 +303,23 @@ def load_scenario_data():
         "eng_ho":          ("Engineering and HO",      0.0),
         "ga_overheads":    ("GA Overheads",            0.0),
         "contract_fee":    ("Contract Fee",            0.0),
+        # Lang overrides (None means "use computed")
+        "lo_spare_parts":            ("lo_spare_parts",            None),
+        "lo_equipment_setting":      ("lo_equipment_setting",      None),
+        "lo_piping":                 ("lo_piping",                 None),
+        "lo_civil":                  ("lo_civil",                  None),
+        "lo_steel":                  ("lo_steel",                  None),
+        "lo_instrumentals":          ("lo_instrumentals",          None),
+        "lo_electrical":             ("lo_electrical",             None),
+        "lo_insulation":             ("lo_insulation",             None),
+        "lo_paint":                  ("lo_paint",                  None),
+        "lo_field_office_staff":     ("lo_field_office_staff",     None),
+        "lo_construction_indirects": ("lo_construction_indirects", None),
+        "lo_freight":                ("lo_freight",                None),
+        "lo_taxes_and_permits":      ("lo_taxes_and_permits",      None),
+        "lo_engineering_and_ho":     ("lo_engineering_and_ho",     None),
+        "lo_ga_overheads":           ("lo_ga_overheads",           None),
+        "lo_contract_fee":           ("lo_contract_fee",           None),
         "databank_year":   ("Databank Year",           2022),
         "analysis_year":   ("Year of Analysis",        PCI_YEARS[-1]),
         "proj_location":   ("Project Location",        "Brazil"),
@@ -524,48 +594,8 @@ with col_ai2:
     )
 st.divider()
 
-# ─────────────────────────────────────────────
-# 8. REFERENCE TABLES
-# ─────────────────────────────────────────────
-st.header("8. Reference Tables")
-
-with st.expander("Plant Cost Index (PCI)", expanded=False):
-    st.markdown("Use the PCI to escalate or de-escalate a known cost from one year to another.")
-    col_pci1, col_pci2, col_pci3 = st.columns(3)
-    with col_pci1:
-        pci_base_year = st.selectbox("Base year", PCI_YEARS, index=PCI_YEARS.index(2014), key="pci_base_year")
-        st.text_input("PCI (base year)", value=f"{PLANT_COST_INDEX[pci_base_year]:.2f}", disabled=True)
-    with col_pci2:
-        pci_target_year = st.selectbox("Target year", PCI_YEARS, index=len(PCI_YEARS) - 1, key="pci_target_year")
-        st.text_input("PCI (target year)", value=f"{PLANT_COST_INDEX[pci_target_year]:.2f}", disabled=True)
-    with col_pci3:
-        pci_base_cost = st.number_input("Known cost ($)", min_value=0.0, step=1000.0, key="pci_base_cost")
-        escalated = pci_escalate(pci_base_cost, pci_base_year, pci_target_year)
-        st.text_input("Escalated cost ($)", value=fmt_curr(escalated or 0.0), disabled=True)
-
-    st.markdown("##### Full Index Table")
-    st.dataframe(
-        pd.DataFrame({"Year": list(PLANT_COST_INDEX.keys()),
-                      "Plant Cost Index": list(PLANT_COST_INDEX.values())}),
-        use_container_width=True, hide_index=True,
-    )
-
-with st.expander("Rates & Prices Unit Mapping", expanded=False):
-    st.markdown("Look up the price unit that corresponds to a given flow-rate unit.")
-    col_r1, col_r2 = st.columns(2)
-    with col_r1:
-        selected_rate = st.selectbox("Rate unit", list(RATE_TO_PRICE_UNIT.keys()), key="rate_unit_lookup")
-    with col_r2:
-        st.text_input("Corresponding price unit", value=price_unit_for(selected_rate), disabled=True)
-
-    st.markdown("##### Full Mapping Table")
-    st.dataframe(
-        pd.DataFrame({"Rate unit":  list(RATE_TO_PRICE_UNIT.keys()),
-                      "Price unit": list(RATE_TO_PRICE_UNIT.values())}),
-        use_container_width=True, hide_index=True,
-    )
-
-st.divider()
+# Reference tables (PLANT_COST_INDEX, RATE_TO_PRICE_UNIT) are defined as
+# constants above and used programmatically — no UI section needed.
 
 # ─────────────────────────────────────────────
 # SAVE
@@ -638,6 +668,23 @@ if st.button("Save / Update Scenario", type="primary"):
             # Additional information
             "Working Hours per Year":    working_hours,
             "Scaling Factor":            scaling_factor,
+            # Lang overrides (persist user edits)
+            "lo_spare_parts":            st.session_state.get("lo_spare_parts"),
+            "lo_equipment_setting":      st.session_state.get("lo_equipment_setting"),
+            "lo_piping":                 st.session_state.get("lo_piping"),
+            "lo_civil":                  st.session_state.get("lo_civil"),
+            "lo_steel":                  st.session_state.get("lo_steel"),
+            "lo_instrumentals":          st.session_state.get("lo_instrumentals"),
+            "lo_electrical":             st.session_state.get("lo_electrical"),
+            "lo_insulation":             st.session_state.get("lo_insulation"),
+            "lo_paint":                  st.session_state.get("lo_paint"),
+            "lo_field_office_staff":     st.session_state.get("lo_field_office_staff"),
+            "lo_construction_indirects": st.session_state.get("lo_construction_indirects"),
+            "lo_freight":                st.session_state.get("lo_freight"),
+            "lo_taxes_and_permits":      st.session_state.get("lo_taxes_and_permits"),
+            "lo_engineering_and_ho":     st.session_state.get("lo_engineering_and_ho"),
+            "lo_ga_overheads":           st.session_state.get("lo_ga_overheads"),
+            "lo_contract_fee":           st.session_state.get("lo_contract_fee"),
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
