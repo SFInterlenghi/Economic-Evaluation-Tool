@@ -63,6 +63,23 @@ PROJECT_CONTINGENCY: dict[tuple[str, str], float] = {
     ("Theoretical (1 or 2)", "High"):   0.40,
 }
 
+# Laboratory charges (% of OLC) keyed by material type
+LAB_CHARGES: dict[str, float] = {
+    "Fluids":            0.10,
+    "Fluids and solids": 0.15,
+    "Solids":            0.20,
+}
+
+# Office labor (% of OLC) keyed by product type
+OFFICE_LABOR: dict[str, float] = {
+    "Basic Chemical":    0.05,
+    "Specialty chemical":0.08,
+    "Consumer product":  0.10,
+    "Pharmaceutical":    0.15,
+}
+
+MIN_SALARY = 273.0   # USD/month — regulatory floor
+
 # Plant Cost Index keyed by year (int)
 PLANT_COST_INDEX: dict[int, float] = {
     2000: 102.44, 2001: 102.32, 2002: 102.09, 2003: 106.35,
@@ -141,6 +158,21 @@ DEFAULTS = {
     # Additional information
     "working_hours":   8000.0,
     "scaling_factor":  0.6,
+    # Fixed costs — Labor
+    "n_operators":          2,
+    "operator_salary":      1247.75,
+    "n_supervisors":        1,
+    "supervisor_salary":    1660.155,
+    "salary_charges":       2.2,
+    "plant_daily_hours":    24.0,
+    "weekly_op_days":       7.0,
+    "worker_hours_shift":   8.0,
+    "worker_shifts_week":   5.0,
+    "worker_vacation_weeks":4.0,
+    # lab/office overrides (None = use table value)
+    "lab_charges_override":    None,
+    "office_labor_override":   None,
+    "labor_working_hrs_override": None,
 }
 
 # ─────────────────────────────────────────────
@@ -330,6 +362,20 @@ def load_scenario_data():
         "location_factor": ("Location Factor",         0.97),
         "working_hours":   ("Working Hours per Year",  8000.0),
         "scaling_factor":  ("Scaling Factor",          0.6),
+        # Fixed costs — Labor
+        "n_operators":               ("Num Operators",            2),
+        "operator_salary":           ("Operator Salary",          1247.75),
+        "n_supervisors":             ("Num Supervisors",          1),
+        "supervisor_salary":         ("Supervisor Salary",        1660.155),
+        "salary_charges":            ("Salary Charges",           2.2),
+        "plant_daily_hours":         ("Plant Daily Hours",        24.0),
+        "weekly_op_days":            ("Weekly Op Days",           7.0),
+        "worker_hours_shift":        ("Worker Hours per Shift",   8.0),
+        "worker_shifts_week":        ("Worker Shifts per Week",   5.0),
+        "worker_vacation_weeks":     ("Worker Vacation Weeks",    4.0),
+        "lab_charges_override":      ("Lab Charges Override",     None),
+        "office_labor_override":     ("Office Labor Override",    None),
+        "labor_working_hrs_override":("Labor Working Hrs Override", None),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -614,7 +660,7 @@ st.divider()
 # ─────────────────────────────────────────────
 # Variable Costs
 # ─────────────────────────────────────────────
-st.header("Variable Costs")
+st.header("8. Variable Costs")
 
 RATE_UNITS  = list(RATE_TO_PRICE_UNIT.keys())
 PRICE_UNITS = list(dict.fromkeys(RATE_TO_PRICE_UNIT.values()))  # unique, order-preserved
@@ -712,7 +758,200 @@ st.divider()
 # constants above and used programmatically — no UI section needed.
 
 # ─────────────────────────────────────────────
-# SAVE
+# 9. Fixed Costs
+# ─────────────────────────────────────────────
+st.header("9. Fixed Costs")
+st.subheader("Labor Costs")
+
+def _overridable_number(label: str, ref_val: float, override_key: str,
+                        pct: bool = False, step: float = 0.01) -> float:
+    """
+    Show a number_input pre-seeded from ref_val.
+    Displays a green ✓ label when matching the reference, amber ⚠ when overridden.
+    The override is stored in session_state[override_key] (None = use ref_val).
+    """
+    stored = st.session_state.get(override_key)
+    current = stored if stored is not None else ref_val
+    is_overridden = stored is not None and abs(stored - ref_val) > 1e-9
+
+    color = "#e67e00" if is_overridden else "#2e7d32"
+    hint  = " ⚠ overridden" if is_overridden else " ✓ reference"
+    suffix = " (%)" if pct else ""
+    st.markdown(
+        f'<p style="margin-bottom:0px;font-size:0.85rem;color:{color};">'
+        f'<b>{label}{suffix}</b>{hint}</p>',
+        unsafe_allow_html=True,
+    )
+
+    def _on_change(ok=override_key, rk=ref_val, wk=f"w_{override_key}"):
+        v = st.session_state.get(wk, rk)
+        st.session_state[ok] = v if abs(v - rk) > 1e-9 else None
+
+    result = st.number_input(
+        label, min_value=0.0, step=step,
+        value=float(current),
+        key=f"w_{override_key}",
+        label_visibility="collapsed",
+        on_change=_on_change,
+    )
+    return result
+
+# ── Row 1: Operators & Salary ──────────────────
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    n_operators = st.number_input(
+        "Number of operators per shift",
+        min_value=1, step=1, key="n_operators",
+        help="Must be a positive integer."
+    )
+with col2:
+    operator_salary = st.number_input(
+        "Operator salary (USD/month per operator)",
+        min_value=MIN_SALARY, step=10.0, key="operator_salary",
+        help=f"Cannot be lower than {fmt_curr(MIN_SALARY)}."
+    )
+    if operator_salary < MIN_SALARY:
+        st.error(f"Operator salary cannot be lower than {fmt_curr(MIN_SALARY)}.")
+
+with col3:
+    n_supervisors = st.number_input(
+        "Number of supervisors per shift",
+        min_value=1, step=1, key="n_supervisors",
+        help="Must be a positive integer and less than number of operators."
+    )
+    if n_supervisors >= n_operators:
+        st.error("Number of supervisors must be less than number of operators.")
+
+with col4:
+    supervisor_salary = st.number_input(
+        "Supervisor salary (USD/month per supervisor)",
+        min_value=MIN_SALARY, step=10.0, key="supervisor_salary",
+        help=f"Cannot be lower than {fmt_curr(MIN_SALARY)} and must exceed operator salary."
+    )
+    if supervisor_salary < MIN_SALARY:
+        st.error(f"Supervisor salary cannot be lower than {fmt_curr(MIN_SALARY)}.")
+    if supervisor_salary <= operator_salary:
+        st.error("Supervisor salary must be greater than operator salary.")
+
+# ── Row 2: Salary charges ──────────────────────
+col1, col2 = st.columns([1, 3])
+with col1:
+    salary_charges = st.number_input(
+        "Salary charges (multiplier)",
+        min_value=1.0, step=0.05, key="salary_charges",
+        help="Must be ≥ 1. Typical value: 2.2."
+    )
+
+st.markdown("---")
+
+# ── Schedule inputs ────────────────────────────
+st.markdown("##### Schedule")
+col1, col2, col3 = st.columns(3)
+
+# Plant working hours — overridable (tracks working_hours from Additional Info)
+labor_wh_ref = st.session_state.get("working_hours", 8000.0)
+with col1:
+    labor_wh = _overridable_number(
+        "Plant working hours per year", labor_wh_ref,
+        "labor_working_hrs_override", step=10.0
+    )
+with col2:
+    plant_daily_hours = st.number_input(
+        "Plant daily operation hours (h/day)",
+        min_value=0.1, max_value=24.0, step=0.5, key="plant_daily_hours"
+    )
+with col3:
+    weekly_op_days = st.number_input(
+        "Weekly operation days (days/week)",
+        min_value=1.0, max_value=7.0, step=1.0, key="weekly_op_days"
+    )
+
+import math
+operating_weeks = labor_wh / plant_daily_hours / weekly_op_days
+
+col4, col5, col6 = st.columns(3)
+with col4:
+    st.text_input("Operating weeks per year",
+                  value=f"{operating_weeks:.2f} weeks", disabled=True)
+with col5:
+    worker_hours_shift = st.number_input(
+        "Worker hours per shift (h/shift)",
+        min_value=0.1, step=0.5, key="worker_hours_shift"
+    )
+with col6:
+    worker_shifts_week = st.number_input(
+        "Worker shifts per week (shifts/week)",
+        min_value=0.1, step=0.5, key="worker_shifts_week"
+    )
+
+col7, col8, col9 = st.columns(3)
+with col7:
+    worker_vacation_weeks = st.number_input(
+        "Worker vacation weeks per year (weeks/year)",
+        min_value=0.0, step=1.0, key="worker_vacation_weeks"
+    )
+
+worker_weeks_per_year = math.floor(operating_weeks - worker_vacation_weeks)
+
+with col8:
+    st.text_input("Worker weeks per year",
+                  value=f"{worker_weeks_per_year} weeks", disabled=True)
+
+# Operating team factor = (labor_wh / worker_hours_shift) / (worker_shifts_week * worker_weeks_per_year)
+denom = worker_shifts_week * worker_weeks_per_year
+op_team_factor = (labor_wh / worker_hours_shift) / denom if denom > 0 else 0.0
+
+with col9:
+    st.text_input("Operating team factor",
+                  value=f"{op_team_factor:.4f}", disabled=True,
+                  help="(Plant working hours / Worker hours per shift) / (Worker shifts per week × Worker weeks per year)")
+
+st.markdown("---")
+
+# ── OLC ───────────────────────────────────────
+olc = (
+    (n_operators * operator_salary + n_supervisors * supervisor_salary)
+    * salary_charges * op_team_factor * 12.0
+)
+st.markdown("##### Operating Labor Costs")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.text_input("OLC – Operating Labor Costs (USD/year)",
+                  value=fmt_curr(olc), disabled=True)
+
+# ── Lab charges (overridable) ──────────────────
+lab_ref = LAB_CHARGES.get(st.session_state.dm_mat_type, 0.10)
+with col2:
+    lab_pct = _overridable_number(
+        f"Laboratory charges (% of OLC) [ref: {lab_ref*100:.0f}% — {st.session_state.dm_mat_type}]",
+        lab_ref, "lab_charges_override", pct=False, step=0.01
+    )
+    lab_pct = max(0.0, lab_pct)
+
+# ── Office labor (overridable) ─────────────────
+office_ref = OFFICE_LABOR.get(st.session_state.dm_prod_type, 0.05)
+with col3:
+    office_pct = _overridable_number(
+        f"Office labor (% of OLC) [ref: {office_ref*100:.0f}% — {st.session_state.dm_prod_type}]",
+        office_ref, "office_labor_override", pct=False, step=0.01
+    )
+    office_pct = max(0.0, office_pct)
+
+total_labor_costs = olc * (1.0 + lab_pct + office_pct)
+
+st.markdown("---")
+col_lc1, col_lc2 = st.columns([3, 2])
+with col_lc1:
+    st.markdown("**Total labor costs (USD/year)**")
+with col_lc2:
+    st.text_input("total_labor", value=fmt_curr(total_labor_costs),
+                  disabled=True, label_visibility="collapsed")
+
+st.divider()
+
+# Reference tables (PLANT_COST_INDEX, RATE_TO_PRICE_UNIT) are defined as
+# constants above and used programmatically — no UI section needed.
+
 # ─────────────────────────────────────────────
 if st.button("Save / Update Scenario", type="primary"):
     if not st.session_state.sn_input:
@@ -790,6 +1029,27 @@ if st.button("Save / Update Scenario", type="primary"):
             "Total Chemical Inputs Utilities":  total_chemical_utilities,
             "Credits and Byproducts":           cb_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
             "Total Revenue":                    total_revenue,
+            # Fixed costs — Labor
+            "Num Operators":             n_operators,
+            "Operator Salary":           operator_salary,
+            "Num Supervisors":           n_supervisors,
+            "Supervisor Salary":         supervisor_salary,
+            "Salary Charges":            salary_charges,
+            "Plant Daily Hours":         plant_daily_hours,
+            "Weekly Op Days":            weekly_op_days,
+            "Operating Weeks":           operating_weeks,
+            "Worker Hours per Shift":    worker_hours_shift,
+            "Worker Shifts per Week":    worker_shifts_week,
+            "Worker Vacation Weeks":     worker_vacation_weeks,
+            "Worker Weeks per Year":     worker_weeks_per_year,
+            "Operating Team Factor":     op_team_factor,
+            "OLC":                       olc,
+            "Lab Charges Override":      st.session_state.get("lab_charges_override"),
+            "Office Labor Override":     st.session_state.get("office_labor_override"),
+            "Labor Working Hrs Override":st.session_state.get("labor_working_hrs_override"),
+            "Lab Charges Pct":           lab_pct,
+            "Office Labor Pct":          office_pct,
+            "Total Labor Costs":         total_labor_costs,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
