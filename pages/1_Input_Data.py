@@ -1,4 +1,5 @@
-import streamlit as st
+
+   import streamlit as st
 import pandas as pd
 
 st.set_page_config(page_title="Input Configuration", layout="wide")
@@ -49,15 +50,15 @@ LANG_FACTORS = {
 
 # Project contingency factors keyed by (TRL, process_severity) → fraction
 PROJECT_CONTINGENCY: dict[tuple[str, str], float] = {
-    ("Industrial (8 or 9)", "Low"):    0.15,
-    ("Industrial (8 or 9)", "Medium"): 0.20,
-    ("Industrial (8 or 9)", "High"):   0.25,
-    ("Pilot (5 to 7)",       "Low"):    0.20,
-    ("Pilot (5 to 7)",       "Medium"): 0.25,
-    ("Pilot (5 to 7)",       "High"):   0.30,
-    ("Bench (3 or 4)",       "Low"):    0.25,
-    ("Bench (3 or 4)",       "Medium"): 0.30,
-    ("Bench (3 or 4)",       "High"):   0.35,
+    ("Industrial (8 or 9)", "Low"):    0.05,
+    ("Industrial (8 or 9)", "Medium"): 0.10,
+    ("Industrial (8 or 9)", "High"):   0.15,
+    ("Pilot (5 to 7)",       "Low"):    0.15,
+    ("Pilot (5 to 7)",       "Medium"): 0.20,
+    ("Pilot (5 to 7)",       "High"):   0.25,
+    ("Bench (3 or 4)",       "Low"):    0.20,
+    ("Bench (3 or 4)",       "Medium"): 0.25,
+    ("Bench (3 or 4)",       "High"):   0.30,
     ("Theoretical (1 or 2)", "Low"):    0.30,
     ("Theoretical (1 or 2)", "Medium"): 0.35,
     ("Theoretical (1 or 2)", "High"):   0.40,
@@ -1105,7 +1106,7 @@ st.divider()
 # ── Additional Fixed Costs ─────────────────────
 st.subheader("Additional Fixed Costs")
 
-admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0*(1+office_pct)
+admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0
 mfg_ov_ref_pct    = MFG_OVERHEAD.get(st.session_state.dm_severity, 0.006) * 100.0
 taxes_ins_ref_pct = TAXES_INSURANCE.get(st.session_state.dm_severity, 0.032) * 100.0
 patents_ref       = PATENTS_ROYALTIES.get((st.session_state.dm_trl, st.session_state.dm_prod_type))
@@ -1151,23 +1152,6 @@ with col4:
         patents_pct = patents_pct_input / 100.0
 
 afc_pre_patents = (admin_ov_pct * olc) + (mfg_ov_pct * project_capex) + (taxes_ins_pct * project_capex)
-direct_fixed_costs = total_labor_costs + supply_maint_costs + afc_pre_patents
-
-st.markdown("---")
-col_afc1, col_afc2 = st.columns([3, 2])
-with col_afc1:
-    st.markdown("**Additional fixed costs (USD/year)**  *(excl. patents — resolved in indirect costs)*")
-with col_afc2:
-    st.text_input("afc_display", value=fmt_curr(afc_pre_patents),
-                  disabled=True, label_visibility="collapsed")
-
-st.markdown("---")
-col_dfc1, col_dfc2 = st.columns([3, 2])
-with col_dfc1:
-    st.markdown("**Direct fixed costs (USD/year)**")
-with col_dfc2:
-    st.text_input("dfc_display", value=fmt_curr(direct_fixed_costs),
-                  disabled=True, label_visibility="collapsed")
 
 st.divider()
 
@@ -1208,21 +1192,55 @@ with col4:
     )
 r_d_pct = r_d_pct_input / 100.0
 
-# Solve OPEX iteratively: numerator fixed costs / (1 - OPEX-dependent rates)
+# ── Resolve OPEX & all costs analytically ────────────────────────────────
+# AFC = admin_ov*OLC + (mfg_ov + taxes_ins)*CAPEX + patents*OPEX
+#
+# OPEX = [ TVC + labor + supply_maint
+#           + (admin_ov + admin_costs)*OLC
+#           + (mfg_ov + taxes_ins + mfg_costs)*CAPEX ]
+#         / (1 - patents - dist_sell - r_d)
+
 direct_var_costs = total_raw_material_cost + total_chemical_utilities - total_revenue
-numerator   = (direct_var_costs + total_labor_costs + supply_maint_costs
-               + afc_pre_patents
-               + admin_costs_pct * olc
-               + mfg_costs_pct * project_capex)
-denominator = 1.0 - dist_sell_pct - r_d_pct - patents_pct
-opex = numerator / denominator if denominator > 0 else 0.0
+
+_olc_coeff   = admin_ov_pct + admin_costs_pct
+_capex_coeff = mfg_ov_pct + taxes_ins_pct + mfg_costs_pct
+
+_numerator   = (direct_var_costs
+                + total_labor_costs
+                + supply_maint_costs
+                + _olc_coeff   * olc
+                + _capex_coeff * project_capex)
+_denominator = 1.0 - patents_pct - dist_sell_pct - r_d_pct
+opex = _numerator / _denominator if _denominator > 0 else 0.0
+
+afc = (admin_ov_pct * olc
+       + (mfg_ov_pct + taxes_ins_pct) * project_capex
+       + patents_pct * opex)
 
 indirect_fixed_costs = (admin_costs_pct * olc
                         + mfg_costs_pct * project_capex
                         + dist_sell_pct * opex
-                        + r_d_pct * opex
-                        + patents_pct * opex)
-total_fixed_costs = direct_fixed_costs + indirect_fixed_costs
+                        + r_d_pct       * opex
+                        + patents_pct   * opex)
+
+direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
+total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
+
+st.markdown("---")
+col_afc1, col_afc2 = st.columns([3, 2])
+with col_afc1:
+    st.markdown("**Additional fixed costs (USD/year)**")
+with col_afc2:
+    st.text_input("afc_display", value=fmt_curr(afc),
+                  disabled=True, label_visibility="collapsed")
+
+st.markdown("---")
+col_dfc1, col_dfc2 = st.columns([3, 2])
+with col_dfc1:
+    st.markdown("**Direct fixed costs (USD/year)**")
+with col_dfc2:
+    st.text_input("dfc_display", value=fmt_curr(direct_fixed_costs),
+                  disabled=True, label_visibility="collapsed")
 
 st.markdown("---")
 col_ifc1, col_ifc2 = st.columns([3, 2])
@@ -1359,7 +1377,7 @@ if st.button("Save / Update Scenario", type="primary"):
             "Mfg Ov Pct":               mfg_ov_pct,
             "Taxes Ins Pct":             taxes_ins_pct,
             "Patents Pct":               patents_pct,
-            "AFC Pre Patents":           afc_pre_patents,
+            "AFC Pre Patents":           afc,
             "Direct Fixed Costs":        direct_fixed_costs,
             # Fixed costs — Indirect
             "Admin Costs Override":      st.session_state.get("admin_costs_override"),
