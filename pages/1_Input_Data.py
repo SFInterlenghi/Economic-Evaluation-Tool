@@ -194,35 +194,34 @@ def price_unit_for(rate_unit: str) -> str:
 
 def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0) -> float:
     """
-    Lang Factors mode
-    -----------------
-    • If 'Allow manual override' is OFF: fields are disabled, always showing the
-      computed Lang value. Changing equip_acq instantly updates all fields.
-    • If 'Allow manual override' is ON: fields become editable number_inputs.
-      A label badge shows ✓ Lang (green) or ⚠ overridden (amber) depending on
-      whether the user's value differs from the current Lang computation.
+    Lang Factors mode — override OFF:
+        Read-only text_input showing the live computed Lang value.
+        The lf_ key is kept in sync so switching to override mode
+        starts from the correct value, not zero.
 
-    Manual mode
-    -----------
-    Plain number_input bound directly to session_state.
+    Lang Factors mode — override ON:
+        Editable number_input. Label is green (✓ Lang) when the value
+        matches the computed Lang value, amber (⚠ overridden) when it differs.
+
+    Manual mode:
+        Plain number_input bound to session_state via the field's ss_key.
     """
-    ss_key = field.lower().replace(" ", "_")   # e.g. "spare_parts"
-    lf_key = f"lf_{ss_key}"                    # Lang field value key
+    ss_key = field.lower().replace(" ", "_")
+    lf_key = f"lf_{ss_key}"
 
     if st.session_state.oth_cost_src == "Lang Factors":
         lang_computed = lang_val(field, equip_acq)
         allow = st.session_state.get("allow_override", False)
 
+        # Always keep lf_ in sync with the computed value while override is OFF.
+        # This guarantees that when the user ticks the checkbox the widget
+        # initialises from the correct Lang value rather than 0.
         if not allow:
-            # Always show live Lang value, no editing
-            st.text_input(f"{label}", value=fmt_curr(lang_computed), disabled=True,
-                          label_visibility="visible")
-            # Keep lf_ in sync so override mode starts from current Lang value
             st.session_state[lf_key] = lang_computed
+            st.text_input(f"{label}", value=fmt_curr(lang_computed), disabled=True)
             return lang_computed
 
-        # Override mode — seed lf_ key if missing or if equip_acq changed and
-        # the field hasn't been manually touched since the last seed
+        # Override is ON — seed only if the key is genuinely absent
         if lf_key not in st.session_state:
             st.session_state[lf_key] = lang_computed
 
@@ -389,7 +388,6 @@ st.header("7. Project CAPEX")
 
 is_lang = st.session_state.oth_cost_src == "Lang Factors"
 
-# Show the override checkbox only when Lang Factors is active
 if is_lang:
     st.checkbox(
         "Allow manual override of Lang factor fields?",
@@ -397,14 +395,7 @@ if is_lang:
         help="When checked, all Lang-computed fields become editable. "
              "Fields that differ from their Lang value are highlighted in amber.",
     )
-    # If override is OFF, re-seed all lf_ values whenever equip_acq changes
-    # so that changing Equipment Acquisition always flows through immediately.
-    if not st.session_state.allow_override:
-        current_acq = st.session_state.get("equip_acq", 0.0)
-        if st.session_state.get("lang_seeded_acq") != current_acq:
-            _reseed_lang_fields(current_acq)
 else:
-    # Leaving Lang mode — clear any stale lf_ values
     st.session_state.allow_override = False
 
 # 7.1 Equipment Costs
