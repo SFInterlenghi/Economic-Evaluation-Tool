@@ -616,66 +616,95 @@ st.divider()
 # ─────────────────────────────────────────────
 st.header("Variable Costs")
 
-# ── Raw Materials ──────────────────────────────
-st.subheader("Raw Materials")
-
 RATE_UNITS  = list(RATE_TO_PRICE_UNIT.keys())
 PRICE_UNITS = list(dict.fromkeys(RATE_TO_PRICE_UNIT.values()))  # unique, order-preserved
 
-# Load existing rows
-existing_rm = (
-    st.session_state.scenarios
-    .get(st.session_state.sn_input, {})
-    .get("Raw Materials", [])
+def _cost_table(section_key: str, editor_key: str) -> tuple[pd.DataFrame, float]:
+    """
+    Render a Name | Rate | Rate Unit | Price | Price Unit data_editor.
+    Returns (active_rows_df, total_cost) where total = Σ Price × Rate × working_hours.
+    section_key : key used to load saved rows from st.session_state.scenarios
+    editor_key  : unique key for the st.data_editor widget
+    """
+    existing = (
+        st.session_state.scenarios
+        .get(st.session_state.sn_input, {})
+        .get(section_key, [])
+    )
+    _blank = {"Name": None, "Rate": 0.0, "Rate Unit": RATE_UNITS[0],
+              "Price": 0.0, "Price Unit": PRICE_UNITS[0]}
+    if existing:
+        df = pd.DataFrame(existing)[["Name", "Rate", "Rate Unit", "Price", "Price Unit"]]
+    else:
+        df = pd.DataFrame([_blank])
+
+    edited = st.data_editor(
+        df,
+        key=editor_key,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Name":       st.column_config.TextColumn("Name",       width="large"),
+            "Rate":       st.column_config.NumberColumn(
+                              "Rate", min_value=0.0, step=0.01,
+                              format="%.5f",                        width="small"),
+            "Rate Unit":  st.column_config.SelectboxColumn(
+                              "Rate Unit", options=RATE_UNITS,      width="small"),
+            "Price":      st.column_config.NumberColumn(
+                              "Price", min_value=0.0, step=0.01,
+                              format="%.4f",                        width="small"),
+            "Price Unit": st.column_config.SelectboxColumn(
+                              "Price Unit", options=PRICE_UNITS,    width="small"),
+        },
+    )
+
+    edited = edited.copy()
+    edited["Price Unit"] = edited["Rate Unit"].map(RATE_TO_PRICE_UNIT).fillna(PRICE_UNITS[0])
+
+    active = edited[edited["Name"].notna() & (edited["Name"].str.strip() != "")].copy()
+    active["Line Cost"] = (
+        pd.to_numeric(active["Price"], errors="coerce").fillna(0.0)
+        * pd.to_numeric(active["Rate"],  errors="coerce").fillna(0.0)
+        * working_hours
+    )
+    total = active["Line Cost"].sum()
+    return active, total
+
+
+def _total_row(label: str, value: float, key: str):
+    st.markdown("---")
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown(f"**{label}**")
+    with c2:
+        st.text_input(key, value=fmt_curr(value), disabled=True, label_visibility="collapsed")
+
+
+# ── Raw Materials ──────────────────────────────
+st.subheader("Raw Materials")
+rm_active, total_raw_material_cost = _cost_table(
+    "Raw Materials", f"rm_editor_{st.session_state.table_key}"
 )
+_total_row("Total raw materials cost", total_raw_material_cost, "total_rm")
 
-_blank_row = {"Name": None, "Rate": 0.0, "Rate Unit": RATE_UNITS[0], "Price": 0.0, "Price Unit": PRICE_UNITS[0]}
-if existing_rm:
-    rm_df = pd.DataFrame(existing_rm)[["Name", "Rate", "Rate Unit", "Price", "Price Unit"]]
-else:
-    rm_df = pd.DataFrame([_blank_row])
+st.divider()
 
-rm_edited = st.data_editor(
-    rm_df,
-    key=f"rm_editor_{st.session_state.table_key}",
-    num_rows="dynamic",
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Name":       st.column_config.TextColumn("Name",       width="large"),
-        "Rate":       st.column_config.NumberColumn(
-                          "Rate", min_value=0.0, step=0.01,
-                          format="%.5f",                        width="small"),
-        "Rate Unit":  st.column_config.SelectboxColumn(
-                          "Rate Unit", options=RATE_UNITS,      width="small"),
-        "Price":      st.column_config.NumberColumn(
-                          "Price", min_value=0.0, step=0.01,
-                          format="%.4f",                        width="small"),
-        "Price Unit": st.column_config.SelectboxColumn(
-                          "Price Unit", options=PRICE_UNITS,    width="small"),
-    },
+# ── Chemical Inputs and Utilities ─────────────
+st.subheader("Chemical Inputs and Utilities")
+cu_active, total_chemical_utilities = _cost_table(
+    "Chemical Inputs and Utilities", f"cu_editor_{st.session_state.table_key}"
 )
+_total_row("Total chemical inputs and utilities", total_chemical_utilities, "total_cu")
 
-# Recompute Price Unit server-side from Rate Unit so it's always correct
-rm_edited = rm_edited.copy()
-rm_edited["Price Unit"] = rm_edited["Rate Unit"].map(RATE_TO_PRICE_UNIT).fillna(PRICE_UNITS[0])
+st.divider()
 
-# Active rows and total
-rm_active = rm_edited[rm_edited["Name"].notna() & (rm_edited["Name"].str.strip() != "")].copy()
-rm_active["Line Cost"] = (
-    pd.to_numeric(rm_active["Price"], errors="coerce").fillna(0.0)
-    * pd.to_numeric(rm_active["Rate"],  errors="coerce").fillna(0.0)
-    * working_hours
+# ── Credits and Byproducts ────────────────────
+st.subheader("Credits and Byproducts")
+cb_active, total_revenue = _cost_table(
+    "Credits and Byproducts", f"cb_editor_{st.session_state.table_key}"
 )
-total_raw_material_cost = rm_active["Line Cost"].sum()
-
-st.markdown("---")
-col_rm1, col_rm2 = st.columns([3, 2])
-with col_rm1:
-    st.markdown("**Total raw materials cost**")
-with col_rm2:
-    st.text_input("total_rm", value=fmt_curr(total_raw_material_cost),
-                  disabled=True, label_visibility="collapsed")
+_total_row("Total Revenue", total_revenue, "total_cb")
 
 st.divider()
 
@@ -755,8 +784,12 @@ if st.button("Save / Update Scenario", type="primary"):
             "Working Hours per Year":    working_hours,
             "Scaling Factor":            scaling_factor,
             # Variable costs
-            "Raw Materials":             rm_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
-            "Total Raw Material Cost":   total_raw_material_cost,
+            "Raw Materials":                    rm_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
+            "Total Raw Material Cost":          total_raw_material_cost,
+            "Chemical Inputs and Utilities":    cu_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
+            "Total Chemical Inputs Utilities":  total_chemical_utilities,
+            "Credits and Byproducts":           cb_active.drop(columns=["Line Cost"]).to_dict(orient="records"),
+            "Total Revenue":                    total_revenue,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
