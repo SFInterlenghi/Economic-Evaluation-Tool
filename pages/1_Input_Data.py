@@ -47,6 +47,55 @@ LANG_FACTORS = {
     "Contract Fee":           (0.044, 0.161),
 }
 
+# Project contingency factors keyed by (TRL, process_severity) → fraction
+PROJECT_CONTINGENCY: dict[tuple[str, str], float] = {
+    ("Industrial (8 or 9)", "Low"):    0.05,
+    ("Industrial (8 or 9)", "Medium"): 0.10,
+    ("Industrial (8 or 9)", "High"):   0.15,
+    ("Pilot (5 to 7)",       "Low"):    0.15,
+    ("Pilot (5 to 7)",       "Medium"): 0.20,
+    ("Pilot (5 to 7)",       "High"):   0.25,
+    ("Bench (3 or 4)",       "Low"):    0.20,
+    ("Bench (3 or 4)",       "Medium"): 0.25,
+    ("Bench (3 or 4)",       "High"):   0.30,
+    ("Theoretical (1 or 2)", "Low"):    0.30,
+    ("Theoretical (1 or 2)", "Medium"): 0.35,
+    ("Theoretical (1 or 2)", "High"):   0.40,
+}
+
+# Plant Cost Index keyed by year (int)
+PLANT_COST_INDEX: dict[int, float] = {
+    2000: 102.44, 2001: 102.32, 2002: 102.09, 2003: 106.35,
+    2004: 119.36, 2005: 128.89, 2006: 135.32, 2007: 140.98,
+    2008: 157.68, 2009: 138.86, 2010: 146.42, 2011: 156.66,
+    2012: 155.24, 2013: 152.74, 2014: 155.32, 2015: 144.33,
+    2016: 139.48, 2017: 145.48, 2018: 155.62, 2019: 156.33,
+    2020: 150.65, 2021: 181.39, 2022: 214.60, 2023: 206.48,
+    2024: 203.90,
+}
+PCI_YEARS = sorted(PLANT_COST_INDEX.keys())
+
+# Rates-and-prices unit mapping: rate_unit → price_unit
+RATE_TO_PRICE_UNIT: dict[str, str] = {
+    "g/h":      "USD/g",
+    "kg/h":     "USD/kg",
+    "t/h":      "USD/t",
+    "mL/h":     "USD/mL",
+    "L/h":      "USD/L",
+    "m³/h":     "USD/m³",
+    "kW":       "USD/kWh",
+    "MW":       "USD/MWh",
+    "GW":       "USD/GWh",
+    "MMBtu/h":  "USD/MMBtu",
+    "g/y":      "USD/g",
+    "kg/y":     "USD/kg",
+    "t/y":      "USD/t",
+    "mL/y":     "USD/mL",
+    "L/y":      "USD/L",
+    "m³/y":     "USD/m³",
+    "MMBtu/y":  "USD/MMBtu",
+}
+
 # Default session-state values — single source of truth
 DEFAULTS = {
     "sn_input":        "",
@@ -81,6 +130,14 @@ DEFAULTS = {
     "eng_ho":          0.0,
     "ga_overheads":    0.0,
     "contract_fee":    0.0,
+    # CAPEX calculations
+    "databank_year":   2022,
+    "analysis_year":   PCI_YEARS[-1],
+    "proj_location":   "Brazil",
+    "location_factor": 0.97,
+    # Additional information
+    "working_hours":   8000.0,
+    "scaling_factor":  0.6,
 }
 
 # ─────────────────────────────────────────────
@@ -101,6 +158,28 @@ def lang_val(field: str, equip_acq: float) -> float:
     """Return the Lang-factored value for *field* given Equipment Acquisition cost."""
     idx = 0 if st.session_state.lang_utility else 1
     return equip_acq * LANG_FACTORS[field][idx]
+
+
+def get_pci(year: int) -> float | None:
+    """Return the Plant Cost Index for *year*, or None if not available."""
+    return PLANT_COST_INDEX.get(year)
+
+
+def pci_escalate(base_cost: float, base_year: int, target_year: int) -> float | None:
+    """
+    Escalate *base_cost* from *base_year* to *target_year* using the Plant Cost Index.
+    Returns None when either year is missing from the table.
+    """
+    pci_base   = PLANT_COST_INDEX.get(base_year)
+    pci_target = PLANT_COST_INDEX.get(target_year)
+    if pci_base and pci_target:
+        return base_cost * (pci_target / pci_base)
+    return None
+
+
+def price_unit_for(rate_unit: str) -> str:
+    """Return the price unit that corresponds to *rate_unit*, or an empty string."""
+    return RATE_TO_PRICE_UNIT.get(rate_unit, "")
 
 
 def lang_or_manual(field: str, label: str, equip_acq: float, step: float = 100.0):
@@ -171,6 +250,12 @@ def load_scenario_data():
         "eng_ho":          ("Engineering and HO",      0.0),
         "ga_overheads":    ("GA Overheads",            0.0),
         "contract_fee":    ("Contract Fee",            0.0),
+        "databank_year":   ("Databank Year",           2022),
+        "analysis_year":   ("Year of Analysis",        PCI_YEARS[-1]),
+        "proj_location":   ("Project Location",        "Brazil"),
+        "location_factor": ("Location Factor",         0.97),
+        "working_hours":   ("Working Hours per Year",  8000.0),
+        "scaling_factor":  ("Scaling Factor",          0.6),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -328,10 +413,158 @@ with nf_cols[(len(nf_fields)) % 3]:
     st.text_input("Total Non-Field Costs", value=fmt_curr(total_non_field_costs), disabled=True)
 st.markdown("---")
 
-# 7.6 CAPEX Summary
+# 7.6 CAPEX Calculations
 st.subheader("Capex Calculations")
 project_costs_isbl_osbl = total_direct_field_costs + total_indirect_field_costs + total_non_field_costs
 st.metric("Project Costs for ISBL + OSBL", fmt_curr(project_costs_isbl_osbl))
+
+st.markdown("---")
+col_cx1, col_cx2, col_cx3 = st.columns(3)
+
+# --- Project Contingency (auto-looked-up) ---
+with col_cx1:
+    contingency_pct = PROJECT_CONTINGENCY.get(
+        (st.session_state.dm_trl, st.session_state.dm_severity), 0.0
+    )
+    st.text_input(
+        "Project Contingency (auto)",
+        value=f"{contingency_pct * 100:.1f}%  "
+              f"[TRL: {st.session_state.dm_trl} / Severity: {st.session_state.dm_severity}]",
+        disabled=True,
+        help="Looked up from the Project Contingency reference table using TRL and Process Severity."
+    )
+
+# --- Databank Year ---
+with col_cx2:
+    databank_year_input = st.number_input(
+        "Databank Year", min_value=PCI_YEARS[0], max_value=PCI_YEARS[-1],
+        step=1, key="databank_year",
+        help="Reference year for the cost data (defaults to 2022)."
+    )
+    pci_databank = PLANT_COST_INDEX.get(int(databank_year_input))
+    st.text_input(
+        "PCI (Databank Year)",
+        value=f"{pci_databank:.2f}" if pci_databank else "—",
+        disabled=True,
+    )
+
+# --- Year of Analysis ---
+with col_cx3:
+    analysis_year_input = st.number_input(
+        "Year of Analysis", min_value=1900, max_value=2100,
+        step=1, key="analysis_year",
+        help=f"Target year for cost update. Latest available index year: {PCI_YEARS[-1]}."
+    )
+    pci_analysis = PLANT_COST_INDEX.get(int(analysis_year_input))
+    if pci_analysis is None:
+        # Year not in database — warn and fall back to most recent year
+        st.warning(
+            "Index not yet available in the database. "
+            f"Value will default to most recent year ({PCI_YEARS[-1]})."
+        )
+        pci_analysis = PLANT_COST_INDEX[PCI_YEARS[-1]]
+        effective_analysis_year = PCI_YEARS[-1]
+    else:
+        effective_analysis_year = int(analysis_year_input)
+    st.text_input("PCI (Year of Analysis)", value=f"{pci_analysis:.2f}", disabled=True)
+
+# --- Time Update Factor + Location ---
+st.markdown("---")
+col_cx4, col_cx5, col_cx6, col_cx7 = st.columns(4)
+
+time_update_factor = pci_analysis / pci_databank if pci_databank else 0.0
+
+with col_cx4:
+    st.text_input(
+        "Time Update Factor",
+        value=f"{time_update_factor:.4f}",
+        disabled=True,
+        help="PCI(Year of Analysis) ÷ PCI(Databank Year)"
+    )
+
+with col_cx5:
+    st.text_input("Project Location", key="proj_location",
+                  help="Enter the target country for this project.")
+
+with col_cx6:
+    location_factor = st.number_input(
+        "Location Factor", min_value=0.0, step=0.01,
+        key="location_factor",
+        help="Multiplier that accounts for regional cost differences (e.g. 0.97 for Brazil)."
+    )
+
+with col_cx7:
+    project_capex = (
+        project_costs_isbl_osbl * (1 + contingency_pct)
+        * time_update_factor
+        * location_factor
+    )
+    st.metric("Project CAPEX", fmt_curr(project_capex))
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# Additional Information
+# ─────────────────────────────────────────────
+st.header("Additional Information")
+col_ai1, col_ai2 = st.columns(2)
+with col_ai1:
+    working_hours = st.number_input(
+        "Working Hours per Year (h/y)",
+        min_value=1.0, max_value=8760.0,
+        step=10.0, key="working_hours",
+        help="Operating hours per year. Maximum is 8 760 h/y (continuous operation)."
+    )
+with col_ai2:
+    scaling_factor = st.number_input(
+        "Scaling Factor",
+        min_value=0.001, step=0.01,
+        key="scaling_factor",
+        help="Six-tenths rule exponent or other capacity scaling factor. Must be > 0."
+    )
+st.divider()
+
+# ─────────────────────────────────────────────
+# 8. REFERENCE TABLES
+# ─────────────────────────────────────────────
+st.header("8. Reference Tables")
+
+with st.expander("Plant Cost Index (PCI)", expanded=False):
+    st.markdown("Use the PCI to escalate or de-escalate a known cost from one year to another.")
+    col_pci1, col_pci2, col_pci3 = st.columns(3)
+    with col_pci1:
+        pci_base_year = st.selectbox("Base year", PCI_YEARS, index=PCI_YEARS.index(2014), key="pci_base_year")
+        st.text_input("PCI (base year)", value=f"{PLANT_COST_INDEX[pci_base_year]:.2f}", disabled=True)
+    with col_pci2:
+        pci_target_year = st.selectbox("Target year", PCI_YEARS, index=len(PCI_YEARS) - 1, key="pci_target_year")
+        st.text_input("PCI (target year)", value=f"{PLANT_COST_INDEX[pci_target_year]:.2f}", disabled=True)
+    with col_pci3:
+        pci_base_cost = st.number_input("Known cost ($)", min_value=0.0, step=1000.0, key="pci_base_cost")
+        escalated = pci_escalate(pci_base_cost, pci_base_year, pci_target_year)
+        st.text_input("Escalated cost ($)", value=fmt_curr(escalated or 0.0), disabled=True)
+
+    st.markdown("##### Full Index Table")
+    st.dataframe(
+        pd.DataFrame({"Year": list(PLANT_COST_INDEX.keys()),
+                      "Plant Cost Index": list(PLANT_COST_INDEX.values())}),
+        use_container_width=True, hide_index=True,
+    )
+
+with st.expander("Rates & Prices Unit Mapping", expanded=False):
+    st.markdown("Look up the price unit that corresponds to a given flow-rate unit.")
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        selected_rate = st.selectbox("Rate unit", list(RATE_TO_PRICE_UNIT.keys()), key="rate_unit_lookup")
+    with col_r2:
+        st.text_input("Corresponding price unit", value=price_unit_for(selected_rate), disabled=True)
+
+    st.markdown("##### Full Mapping Table")
+    st.dataframe(
+        pd.DataFrame({"Rate unit":  list(RATE_TO_PRICE_UNIT.keys()),
+                      "Price unit": list(RATE_TO_PRICE_UNIT.values())}),
+        use_container_width=True, hide_index=True,
+    )
+
 st.divider()
 
 # ─────────────────────────────────────────────
@@ -392,6 +625,19 @@ if st.button("Save / Update Scenario", type="primary"):
             "Contract Fee":              contract_fee,
             "Total Non-Field Costs":     total_non_field_costs,
             "Project Costs ISBL+OSBL":   project_costs_isbl_osbl,
+            # CAPEX calculations
+            "Contingency Pct":           contingency_pct,
+            "Databank Year":             int(databank_year_input),
+            "Year of Analysis":          effective_analysis_year,
+            "PCI Databank":              pci_databank,
+            "PCI Analysis":              pci_analysis,
+            "Time Update Factor":        time_update_factor,
+            "Project Location":          st.session_state.proj_location,
+            "Location Factor":           location_factor,
+            "Project CAPEX":             project_capex,
+            # Additional information
+            "Working Hours per Year":    working_hours,
+            "Scaling Factor":            scaling_factor,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
@@ -410,6 +656,7 @@ if st.session_state.scenarios:
             "Eq. Cost":         d["Equipment Costs Source"],
             "Total Equip. Cost":fmt_curr(d["Total Equipment Costs"]),
             "ISBL+OSBL Cost":   fmt_curr(d["Project Costs ISBL+OSBL"]),
+            "Project CAPEX":    fmt_curr(d.get("Project CAPEX", 0.0)),
             "TRL":              d["TRL"],
         }
         for name, d in st.session_state.scenarios.items()
