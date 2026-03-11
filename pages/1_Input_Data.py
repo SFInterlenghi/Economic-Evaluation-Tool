@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 
@@ -1226,37 +1225,81 @@ indirect_fixed_costs = (admin_costs_pct * olc
 direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
 total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
 
-# ── AFC Debug Breakdown ───────────────────────
-with st.expander("🔍 AFC Formula Breakdown (for validation)", expanded=True):
-    st.markdown("**AFC = admin_ov×OLC + (mfg_ov + taxes_ins)×CAPEX + patents×OPEX**")
-    col_d1, col_d2, col_d3 = st.columns(3)
-    with col_d1:
-        st.metric("Admin overhead %", f"{admin_ov_pct*100:.4f}%")
-        st.metric("Admin overhead × OLC", fmt_curr(admin_ov_pct * olc))
-        st.metric("OLC", fmt_curr(olc))
-    with col_d2:
-        st.metric("Mfg overhead %", f"{mfg_ov_pct*100:.4f}%")
-        st.metric("Taxes & insurance %", f"{taxes_ins_pct*100:.4f}%")
-        st.metric("(Mfg ov + Taxes ins) × CAPEX", fmt_curr((mfg_ov_pct + taxes_ins_pct) * project_capex))
-        st.metric("Project CAPEX", fmt_curr(project_capex))
-    with col_d3:
-        st.metric("Patents %", f"{patents_pct*100:.4f}%")
-        st.metric("Patents × OPEX", fmt_curr(patents_pct * opex))
-        st.metric("OPEX (resolved)", fmt_curr(opex))
-    st.markdown("---")
-    col_d4, col_d5 = st.columns(2)
-    with col_d4:
-        st.metric("Direct variable costs (TVC)", fmt_curr(direct_var_costs))
-        st.metric("Total labor costs", fmt_curr(total_labor_costs))
-        st.metric("Supply & maintenance", fmt_curr(supply_maint_costs))
-        st.metric("OLC coeff (admin_ov + admin_costs)", f"{_olc_coeff*100:.4f}%")
-        st.metric("OLC coeff × OLC", fmt_curr(_olc_coeff * olc))
-    with col_d5:
-        st.metric("CAPEX coeff (mfg_ov + taxes_ins + mfg_costs)", f"{_capex_coeff*100:.4f}%")
-        st.metric("CAPEX coeff × CAPEX", fmt_curr(_capex_coeff * project_capex))
-        st.metric("OPEX denominator (1 - patents - dist - r&d)", f"{_denominator:.6f}")
-        st.metric("OPEX numerator", fmt_curr(_numerator))
-        st.metric("**AFC**", fmt_curr(afc))
+# ── Step-by-step AFC substitution (for validation) ──────────────────────
+with st.expander("🔍 Step-by-step AFC substitution", expanded=True):
+    st.markdown("### Step 1 — Inputs")
+    st.markdown(f"""
+| Variable | Symbol | Value |
+|---|---|---|
+| OLC | OLC | {fmt_curr(olc)} |
+| Project CAPEX | CAPEX | {fmt_curr(project_capex)} |
+| Administrative overhead % | admin\_ov | {admin_ov_pct*100:.4f}% |
+| Manufacturing overhead % | mfg\_ov | {mfg_ov_pct*100:.4f}% |
+| Taxes & insurance % | taxes\_ins | {taxes_ins_pct*100:.4f}% |
+| Patents & royalties % | patents | {patents_pct*100:.4f}% |
+| Administrative costs % | admin\_costs | {admin_costs_pct*100:.4f}% |
+| Manufacturing costs % | mfg\_costs | {mfg_costs_pct*100:.4f}% |
+| Distribution & selling % | dist\_sell | {dist_sell_pct*100:.4f}% |
+| Research & development % | r\_d | {r_d_pct*100:.4f}% |
+""")
+
+    st.markdown("### Step 2 — Direct variable costs (TVC)")
+    st.markdown(f"""
+| Component | Value |
+|---|---|
+| Raw materials | {fmt_curr(total_raw_material_cost)} |
+| Chemical inputs & utilities | {fmt_curr(total_chemical_utilities)} |
+| Credits & byproducts (−) | {fmt_curr(total_revenue)} |
+| **TVC = raw + chem − credits** | **{fmt_curr(direct_var_costs)}** |
+""")
+
+    _term_olc   = _olc_coeff * olc
+    _term_capex_num = _capex_coeff * project_capex
+    st.markdown("### Step 3 — OPEX numerator")
+    st.markdown(f"""
+| Term | Calculation | Value |
+|---|---|---|
+| TVC | — | {fmt_curr(direct_var_costs)} |
+| Total labor costs | — | {fmt_curr(total_labor_costs)} |
+| Supply & maintenance | — | {fmt_curr(supply_maint_costs)} |
+| (admin\_ov + admin\_costs) × OLC | ({admin_ov_pct*100:.4f}% + {admin_costs_pct*100:.4f}%) × {fmt_curr(olc)} | {fmt_curr(_term_olc)} |
+| (mfg\_ov + taxes\_ins + mfg\_costs) × CAPEX | ({mfg_ov_pct*100:.4f}% + {taxes_ins_pct*100:.4f}% + {mfg_costs_pct*100:.4f}%) × {fmt_curr(project_capex)} | {fmt_curr(_term_capex_num)} |
+| **Numerator** | **sum of above** | **{fmt_curr(_numerator)}** |
+""")
+
+    st.markdown("### Step 4 — OPEX denominator & OPEX")
+    st.markdown(f"""
+| Term | Calculation | Value |
+|---|---|---|
+| Denominator | 1 − {patents_pct*100:.4f}% − {dist_sell_pct*100:.4f}% − {r_d_pct*100:.4f}% | {_denominator:.6f} |
+| **OPEX = numerator / denominator** | {fmt_curr(_numerator)} ÷ {_denominator:.6f} | **{fmt_curr(opex)}** |
+""")
+
+    _afc_t1 = admin_ov_pct * olc
+    _afc_t2 = (mfg_ov_pct + taxes_ins_pct) * project_capex
+    _afc_t3 = patents_pct * opex
+    st.markdown("### Step 5 — AFC = admin\_ov×OLC + (mfg\_ov + taxes\_ins)×CAPEX + patents×OPEX")
+    st.markdown(f"""
+| Term | Calculation | Value |
+|---|---|---|
+| admin\_ov × OLC | {admin_ov_pct*100:.4f}% × {fmt_curr(olc)} | {fmt_curr(_afc_t1)} |
+| (mfg\_ov + taxes\_ins) × CAPEX | ({mfg_ov_pct*100:.4f}% + {taxes_ins_pct*100:.4f}%) × {fmt_curr(project_capex)} | {fmt_curr(_afc_t2)} |
+| patents × OPEX | {patents_pct*100:.4f}% × {fmt_curr(opex)} | {fmt_curr(_afc_t3)} |
+| **AFC** | **sum of above** | **{fmt_curr(afc)}** |
+""")
+
+    st.markdown("### Step 6 — Cost summary")
+    st.markdown(f"""
+| Cost item | Value |
+|---|---|
+| Total labor costs | {fmt_curr(total_labor_costs)} |
+| Supply & maintenance | {fmt_curr(supply_maint_costs)} |
+| AFC | {fmt_curr(afc)} |
+| **Direct fixed costs** | **{fmt_curr(direct_fixed_costs)}** |
+| Indirect fixed costs | {fmt_curr(indirect_fixed_costs)} |
+| **Total fixed costs** | **{fmt_curr(total_fixed_costs)}** |
+| **OPEX** | **{fmt_curr(opex)}** |
+""")
 
 st.markdown("---")
 col_afc1, col_afc2 = st.columns([3, 2])
