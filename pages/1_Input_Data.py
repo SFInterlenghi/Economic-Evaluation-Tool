@@ -81,6 +81,99 @@ OFFICE_LABOR: dict[str, float] = {
 
 MIN_SALARY = 273.0   # USD/month — regulatory floor
 
+# Maintenance and repairs (% of CAPEX) keyed by (material_type, product_type)
+MAINTENANCE_REPAIRS: dict[tuple[str,str], float] = {
+    ("Solids",           "Basic Chemical"):     0.02,
+    ("Solids",           "Specialty chemical"): 0.03,
+    ("Solids",           "Consumer product"):   0.04,
+    ("Solids",           "Pharmaceutical"):     0.02,
+    ("Fluids and solids","Basic Chemical"):     0.015,
+    ("Fluids and solids","Specialty chemical"): 0.025,
+    ("Fluids and solids","Consumer product"):   0.035,
+    ("Fluids and solids","Pharmaceutical"):     0.015,
+    ("Fluids",           "Basic Chemical"):     0.01,
+    ("Fluids",           "Specialty chemical"): 0.02,
+    ("Fluids",           "Consumer product"):   0.03,
+    ("Fluids",           "Pharmaceutical"):     0.01,
+}
+
+# Operating supplies (% of Maintenance) keyed by process_severity
+OPERATING_SUPPLIES: dict[str, float] = {
+    "High":   0.20,
+    "Medium": 0.15,
+    "Low":    0.10,
+}
+
+# Administrative overhead (% of OLC) keyed by product_type
+ADMIN_OVERHEAD: dict[str, float] = {
+    "Basic Chemical":    0.50,
+    "Specialty chemical":0.60,
+    "Consumer product":  0.70,
+    "Pharmaceutical":    0.60,
+}
+
+# Manufacturing overhead (% of CAPEX) keyed by process_severity
+MFG_OVERHEAD: dict[str, float] = {
+    "High":   0.0070,
+    "Medium": 0.0060,
+    "Low":    0.0050,
+}
+
+# Taxes and insurance (% of CAPEX) keyed by process_severity
+TAXES_INSURANCE: dict[str, float] = {
+    "High":   0.050,
+    "Medium": 0.032,
+    "Low":    0.014,
+}
+
+# Patents and royalties (% of OPEX) keyed by (TRL, product_type); None = not applicable
+PATENTS_ROYALTIES: dict[tuple[str,str], float | None] = {
+    ("Industrial (8 or 9)", "Basic Chemical"):     0.010,
+    ("Industrial (8 or 9)", "Specialty chemical"): 0.020,
+    ("Industrial (8 or 9)", "Consumer product"):   0.040,
+    ("Industrial (8 or 9)", "Pharmaceutical"):     0.060,
+    ("Pilot (5 to 7)",       "Basic Chemical"):     None,
+    ("Pilot (5 to 7)",       "Specialty chemical"): 0.010,
+    ("Pilot (5 to 7)",       "Consumer product"):   0.020,
+    ("Pilot (5 to 7)",       "Pharmaceutical"):     0.030,
+    ("Bench (3 or 4)",       "Basic Chemical"):     None,
+    ("Bench (3 or 4)",       "Specialty chemical"): 0.010,
+    ("Bench (3 or 4)",       "Consumer product"):   0.020,
+    ("Bench (3 or 4)",       "Pharmaceutical"):     0.030,
+    ("Theoretical (1 or 2)", "Basic Chemical"):     None,
+    ("Theoretical (1 or 2)", "Specialty chemical"): 0.010,
+    ("Theoretical (1 or 2)", "Consumer product"):   0.020,
+    ("Theoretical (1 or 2)", "Pharmaceutical"):     0.030,
+}
+
+# Distribution and selling (% of OPEX) keyed by product_type
+DIST_SELLING: dict[str, float] = {
+    "Basic Chemical":    0.08,
+    "Specialty chemical":0.02,
+    "Consumer product":  0.20,
+    "Pharmaceutical":    0.14,
+}
+
+# Research and development (% of OPEX) keyed by (TRL, product_type)
+R_AND_D: dict[tuple[str,str], float] = {
+    ("Industrial (8 or 9)", "Basic Chemical"):     0.020,
+    ("Industrial (8 or 9)", "Specialty chemical"): 0.030,
+    ("Industrial (8 or 9)", "Consumer product"):   0.020,
+    ("Industrial (8 or 9)", "Pharmaceutical"):     0.120,
+    ("Pilot (5 to 7)",       "Basic Chemical"):     0.030,
+    ("Pilot (5 to 7)",       "Specialty chemical"): 0.050,
+    ("Pilot (5 to 7)",       "Consumer product"):   0.025,
+    ("Pilot (5 to 7)",       "Pharmaceutical"):     0.170,
+    ("Bench (3 or 4)",       "Basic Chemical"):     0.030,
+    ("Bench (3 or 4)",       "Specialty chemical"): 0.050,
+    ("Bench (3 or 4)",       "Consumer product"):   0.025,
+    ("Bench (3 or 4)",       "Pharmaceutical"):     0.170,
+    ("Theoretical (1 or 2)", "Basic Chemical"):     0.030,
+    ("Theoretical (1 or 2)", "Specialty chemical"): 0.050,
+    ("Theoretical (1 or 2)", "Consumer product"):   0.025,
+    ("Theoretical (1 or 2)", "Pharmaceutical"):     0.170,
+}
+
 # Plant Cost Index keyed by year (int)
 PLANT_COST_INDEX: dict[int, float] = {
     2000: 102.44, 2001: 102.32, 2002: 102.09, 2003: 106.35,
@@ -174,6 +267,19 @@ DEFAULTS = {
     "lab_charges_override":    None,
     "office_labor_override":   None,
     "labor_working_hrs_override": None,
+    # Fixed costs — Supply & maintenance overrides
+    "maint_repair_override":   None,
+    "op_supplies_override":    None,
+    # Fixed costs — Additional fixed overrides
+    "admin_overhead_override": None,
+    "mfg_overhead_override":   None,
+    "taxes_ins_override":      None,
+    "patents_roy_override":    None,
+    # Fixed costs — Indirect fixed overrides
+    "admin_costs_override":    None,
+    "mfg_costs_override":      None,
+    "dist_selling_override":   None,
+    "r_and_d_override":        None,
 }
 
 # ─────────────────────────────────────────────
@@ -377,6 +483,16 @@ def load_scenario_data():
         "lab_charges_override":      ("Lab Charges Override",     None),
         "office_labor_override":     ("Office Labor Override",    None),
         "labor_working_hrs_override":("Labor Working Hrs Override", None),
+        "maint_repair_override":     ("Maint Repair Override",    None),
+        "op_supplies_override":      ("Op Supplies Override",     None),
+        "admin_overhead_override":   ("Admin Overhead Override",  None),
+        "mfg_overhead_override":     ("Mfg Overhead Override",    None),
+        "taxes_ins_override":        ("Taxes Ins Override",       None),
+        "patents_roy_override":      ("Patents Roy Override",     None),
+        "admin_costs_override":      ("Admin Costs Override",     None),
+        "mfg_costs_override":        ("Mfg Costs Override",       None),
+        "dist_selling_override":     ("Dist Selling Override",    None),
+        "r_and_d_override":          ("R And D Override",         None),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -768,20 +884,25 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
                         step: float = 0.01) -> float:
     """
     Show a number_input pre-seeded from ref_val.
-    Displays a green ✓ label when matching the reference, amber ⚠ when overridden.
-    The override is stored in session_state[override_key] (None = use ref_val).
+    Only highlights amber (⚠ overridden) when user has changed the value.
+    No color when value matches the reference.
     """
     stored = st.session_state.get(override_key)
     current = stored if stored is not None else ref_val
     is_overridden = stored is not None and abs(stored - ref_val) > 1e-9
 
-    color = "#e67e00" if is_overridden else "#2e7d32"
-    hint  = " ⚠ overridden" if is_overridden else " ✓ reference"
-    st.markdown(
-        f'<p style="margin-bottom:0px;font-size:0.85rem;color:{color};">'
-        f'<b>{label}</b>{hint}</p>',
-        unsafe_allow_html=True,
-    )
+    if is_overridden:
+        st.markdown(
+            f'<p style="margin-bottom:0px;font-size:0.85rem;color:#e67e00;">'
+            f'<b>{label}</b> ⚠ overridden</p>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<p style="margin-bottom:0px;font-size:0.85rem;">'
+            f'<b>{label}</b></p>',
+            unsafe_allow_html=True,
+        )
 
     def _on_change(ok=override_key, rk=ref_val, wk=f"w_{override_key}"):
         v = st.session_state.get(wk, rk)
@@ -950,12 +1071,183 @@ with col_lc2:
 
 st.divider()
 
+# ── Supply and Maintenance ─────────────────────
+st.subheader("Supply and Maintenance Costs")
+
+maint_ref_pct = MAINTENANCE_REPAIRS.get(
+    (st.session_state.dm_mat_type, st.session_state.dm_prod_type), 0.01
+) * 100.0
+op_sup_ref_pct = OPERATING_SUPPLIES.get(st.session_state.dm_severity, 0.15) * 100.0
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    maint_pct_input = _overridable_number(
+        f"Maintenance and repairs (% of CAPEX)  [ref: {maint_ref_pct:.2f}% — {st.session_state.dm_mat_type} / {st.session_state.dm_prod_type}]",
+        maint_ref_pct, "maint_repair_override", step=0.1
+    )
+maint_pct = maint_pct_input / 100.0
+
+with col2:
+    op_sup_pct_input = _overridable_number(
+        f"Operating supplies (% of Maintenance)  [ref: {op_sup_ref_pct:.2f}% — {st.session_state.dm_severity}]",
+        op_sup_ref_pct, "op_supplies_override", step=0.1
+    )
+op_sup_pct = op_sup_pct_input / 100.0
+
+supply_maint_costs = (maint_pct + maint_pct * op_sup_pct) * project_capex
+
+with col3:
+    st.text_input("Supply and maintenance costs (USD/year)",
+                  value=fmt_curr(supply_maint_costs), disabled=True)
+
+st.divider()
+
+# ── Additional Fixed Costs ─────────────────────
+st.subheader("Additional Fixed Costs")
+
+admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0
+mfg_ov_ref_pct    = MFG_OVERHEAD.get(st.session_state.dm_severity, 0.006) * 100.0
+taxes_ins_ref_pct = TAXES_INSURANCE.get(st.session_state.dm_severity, 0.032) * 100.0
+patents_ref       = PATENTS_ROYALTIES.get((st.session_state.dm_trl, st.session_state.dm_prod_type))
+patents_ref_pct   = (patents_ref * 100.0) if patents_ref is not None else 0.0
+patents_na        = patents_ref is None
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    admin_ov_pct_input = _overridable_number(
+        f"Administrative overhead (% of OLC)  [ref: {admin_ov_ref_pct:.2f}% — {st.session_state.dm_prod_type}]",
+        admin_ov_ref_pct, "admin_overhead_override", step=0.1
+    )
+admin_ov_pct = admin_ov_pct_input / 100.0
+
+with col2:
+    mfg_ov_pct_input = _overridable_number(
+        f"Manufacturing overhead (% of CAPEX)  [ref: {mfg_ov_ref_pct:.2f}% — {st.session_state.dm_severity}]",
+        mfg_ov_ref_pct, "mfg_overhead_override", step=0.01
+    )
+mfg_ov_pct = mfg_ov_pct_input / 100.0
+
+with col3:
+    taxes_ins_pct_input = _overridable_number(
+        f"Taxes and insurance (% of CAPEX)  [ref: {taxes_ins_ref_pct:.2f}% — {st.session_state.dm_severity}]",
+        taxes_ins_ref_pct, "taxes_ins_override", step=0.01
+    )
+taxes_ins_pct = taxes_ins_pct_input / 100.0
+
+with col4:
+    if patents_na:
+        st.markdown(
+            '<p style="margin-bottom:0px;font-size:0.85rem;">'
+            '<b>Patents and royalties (% of OPEX)</b></p>',
+            unsafe_allow_html=True
+        )
+        st.info(f"N/A for {st.session_state.dm_trl} / {st.session_state.dm_prod_type}")
+        patents_pct = 0.0
+    else:
+        patents_pct_input = _overridable_number(
+            f"Patents and royalties (% of OPEX)  [ref: {patents_ref_pct:.2f}% — {st.session_state.dm_trl} / {st.session_state.dm_prod_type}]",
+            patents_ref_pct, "patents_roy_override", step=0.1
+        )
+        patents_pct = patents_pct_input / 100.0
+
+afc_pre_patents = (admin_ov_pct * olc) + (mfg_ov_pct * project_capex) + (taxes_ins_pct * project_capex)
+direct_fixed_costs = total_labor_costs + supply_maint_costs + afc_pre_patents
+
+st.markdown("---")
+col_afc1, col_afc2 = st.columns([3, 2])
+with col_afc1:
+    st.markdown("**Additional fixed costs (USD/year)**  *(excl. patents — resolved in indirect costs)*")
+with col_afc2:
+    st.text_input("afc_display", value=fmt_curr(afc_pre_patents),
+                  disabled=True, label_visibility="collapsed")
+
+st.markdown("---")
+col_dfc1, col_dfc2 = st.columns([3, 2])
+with col_dfc1:
+    st.markdown("**Direct fixed costs (USD/year)**")
+with col_dfc2:
+    st.text_input("dfc_display", value=fmt_curr(direct_fixed_costs),
+                  disabled=True, label_visibility="collapsed")
+
+st.divider()
+
+# ── Indirect Fixed Costs ───────────────────────
+st.subheader("Indirect Fixed Costs")
+
+admin_costs_ref_pct = (1.0 + office_pct) * 0.15 * 100.0
+mfg_costs_ref_pct   = maint_pct * 0.15 * 100.0
+dist_sell_ref_pct   = DIST_SELLING.get(st.session_state.dm_prod_type, 0.08) * 100.0
+r_d_ref_pct         = R_AND_D.get((st.session_state.dm_trl, st.session_state.dm_prod_type), 0.02) * 100.0
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    admin_costs_pct_input = _overridable_number(
+        f"Administrative costs (% of OLC)  [ref: {admin_costs_ref_pct:.2f}%]",
+        admin_costs_ref_pct, "admin_costs_override", step=0.1
+    )
+admin_costs_pct = admin_costs_pct_input / 100.0
+
+with col2:
+    mfg_costs_pct_input = _overridable_number(
+        f"Manufacturing costs (% of CAPEX)  [ref: {mfg_costs_ref_pct:.2f}%]",
+        mfg_costs_ref_pct, "mfg_costs_override", step=0.01
+    )
+mfg_costs_pct = mfg_costs_pct_input / 100.0
+
+with col3:
+    dist_sell_pct_input = _overridable_number(
+        f"Distribution and selling (% of OPEX)  [ref: {dist_sell_ref_pct:.2f}% — {st.session_state.dm_prod_type}]",
+        dist_sell_ref_pct, "dist_selling_override", step=0.1
+    )
+dist_sell_pct = dist_sell_pct_input / 100.0
+
+with col4:
+    r_d_pct_input = _overridable_number(
+        f"Research and development (% of OPEX)  [ref: {r_d_ref_pct:.2f}% — {st.session_state.dm_trl} / {st.session_state.dm_prod_type}]",
+        r_d_ref_pct, "r_and_d_override", step=0.1
+    )
+r_d_pct = r_d_pct_input / 100.0
+
+# Solve OPEX iteratively: numerator fixed costs / (1 - OPEX-dependent rates)
+direct_var_costs = total_raw_material_cost + total_chemical_utilities - total_revenue
+numerator   = (direct_var_costs + total_labor_costs + supply_maint_costs
+               + afc_pre_patents
+               + admin_costs_pct * olc
+               + mfg_costs_pct * project_capex)
+denominator = 1.0 - dist_sell_pct - r_d_pct - patents_pct
+opex = numerator / denominator if denominator > 0 else 0.0
+
+indirect_fixed_costs = (admin_costs_pct * olc
+                        + mfg_costs_pct * project_capex
+                        + dist_sell_pct * opex
+                        + r_d_pct * opex
+                        + patents_pct * opex)
+total_fixed_costs = direct_fixed_costs + indirect_fixed_costs
+
+st.markdown("---")
+col_ifc1, col_ifc2 = st.columns([3, 2])
+with col_ifc1:
+    st.markdown("**Indirect fixed costs (USD/year)**")
+with col_ifc2:
+    st.text_input("ifc_display", value=fmt_curr(indirect_fixed_costs),
+                  disabled=True, label_visibility="collapsed")
+
+st.markdown("---")
+col_tfc1, col_tfc2 = st.columns([3, 2])
+with col_tfc1:
+    st.markdown("**Total fixed costs (USD/year)**")
+with col_tfc2:
+    st.text_input("tfc_display", value=fmt_curr(total_fixed_costs),
+                  disabled=True, label_visibility="collapsed")
+
+st.divider()
+
 # Reference tables (PLANT_COST_INDEX, RATE_TO_PRICE_UNIT) are defined as
 # constants above and used programmatically — no UI section needed.
 
 # ─────────────────────────────────────────────
+# SAVE
 if st.button("Save / Update Scenario", type="primary"):
-    if not st.session_state.sn_input:
         st.error("Please provide a Scenario Name before saving.")
     elif st.session_state.pc_input is None:
         st.error("Please provide a Main Product Capacity before saving.")
@@ -1051,6 +1343,35 @@ if st.button("Save / Update Scenario", type="primary"):
             "Lab Charges Pct":           lab_pct,
             "Office Labor Pct":          office_pct,
             "Total Labor Costs":         total_labor_costs,
+            # Fixed costs — Supply & Maintenance
+            "Maint Repair Override":     st.session_state.get("maint_repair_override"),
+            "Op Supplies Override":      st.session_state.get("op_supplies_override"),
+            "Maint Pct":                 maint_pct,
+            "Op Sup Pct":                op_sup_pct,
+            "Supply Maint Costs":        supply_maint_costs,
+            # Fixed costs — Additional
+            "Admin Overhead Override":   st.session_state.get("admin_overhead_override"),
+            "Mfg Overhead Override":     st.session_state.get("mfg_overhead_override"),
+            "Taxes Ins Override":        st.session_state.get("taxes_ins_override"),
+            "Patents Roy Override":      st.session_state.get("patents_roy_override"),
+            "Admin Ov Pct":              admin_ov_pct,
+            "Mfg Ov Pct":               mfg_ov_pct,
+            "Taxes Ins Pct":             taxes_ins_pct,
+            "Patents Pct":               patents_pct,
+            "AFC Pre Patents":           afc_pre_patents,
+            "Direct Fixed Costs":        direct_fixed_costs,
+            # Fixed costs — Indirect
+            "Admin Costs Override":      st.session_state.get("admin_costs_override"),
+            "Mfg Costs Override":        st.session_state.get("mfg_costs_override"),
+            "Dist Selling Override":     st.session_state.get("dist_selling_override"),
+            "R And D Override":          st.session_state.get("r_and_d_override"),
+            "Admin Costs Pct":           admin_costs_pct,
+            "Mfg Costs Pct":             mfg_costs_pct,
+            "Dist Sell Pct":             dist_sell_pct,
+            "R D Pct":                   r_d_pct,
+            "OPEX":                      opex,
+            "Indirect Fixed Costs":      indirect_fixed_costs,
+            "Total Fixed Costs":         total_fixed_costs,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
