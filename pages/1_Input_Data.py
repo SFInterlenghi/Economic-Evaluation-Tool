@@ -1082,7 +1082,7 @@ op_sup_ref_pct = OPERATING_SUPPLIES.get(st.session_state.dm_severity, 0.15) * 10
 col1, col2, col3 = st.columns(3)
 with col1:
     maint_pct_input = _overridable_number(
-        f"Maintenance and repairs (% of CAPEX)  [ref: {maint_ref_pct:.2f}% — {st.session_state.dm_mat_type} / {st.session_state.dm_prod_type}]",
+        f"Maintenance and repairs (% of CAPEX)  [ref: {aint_ref_pct:.2f}% — {st.session_state.dm_mat_type} / {st.session_state.dm_prod_type}]",
         maint_ref_pct, "maint_repair_override", step=0.1
     )
 maint_pct = maint_pct_input / 100.0
@@ -1105,7 +1105,7 @@ st.divider()
 # ── Additional Fixed Costs ─────────────────────
 st.subheader("Additional Fixed Costs")
 
-admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0*(1+office_pct_input)
+admin_ov_ref_pct  = ADMIN_OVERHEAD.get(st.session_state.dm_prod_type, 0.50) * 100.0*(1+office_pct)
 mfg_ov_ref_pct    = MFG_OVERHEAD.get(st.session_state.dm_severity, 0.006) * 100.0
 taxes_ins_ref_pct = TAXES_INSURANCE.get(st.session_state.dm_severity, 0.032) * 100.0
 patents_ref       = PATENTS_ROYALTIES.get((st.session_state.dm_trl, st.session_state.dm_prod_type))
