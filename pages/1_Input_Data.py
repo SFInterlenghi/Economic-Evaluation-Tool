@@ -628,13 +628,11 @@ existing_rm = (
     .get("Raw Materials", [])
 )
 
-# Build starting DataFrame — one blank row so the editor starts ready to fill
-_blank_row = {"Name": None, "Unit": RATE_UNITS[0], "Price Unit": "", "Price": 0.0, "Rate": 0.0, "Rate Unit": ""}
+# Build starting DataFrame with only the user-editable columns
+# Column order: Name | Unit | Price | Rate
+_blank_row = {"Name": None, "Unit": RATE_UNITS[0], "Price": 0.0, "Rate": 0.0}
 if existing_rm:
-    rm_df = pd.DataFrame(existing_rm)
-    rm_df["Price Unit"] = rm_df["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
-    rm_df["Rate Unit"]  = rm_df["Unit"]
-    rm_df = rm_df[["Name", "Unit", "Price Unit", "Price", "Rate", "Rate Unit"]]
+    rm_df = pd.DataFrame(existing_rm)[["Name", "Unit", "Price", "Rate"]]
 else:
     rm_df = pd.DataFrame([_blank_row])
 
@@ -645,39 +643,58 @@ rm_edited = st.data_editor(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Name":       st.column_config.TextColumn("Name",      width="large"),
-        "Unit":       st.column_config.SelectboxColumn(
-                          "Unit", options=RATE_UNITS,          width="small"),
-        "Price Unit": st.column_config.TextColumn("Price Unit", width="small",
-                          disabled=True),
-        "Price":      st.column_config.NumberColumn(
-                          "Price", min_value=0.0, step=0.01,
-                          format="%.4f",                       width="small"),
-        "Rate":       st.column_config.NumberColumn(
-                          "Rate",  min_value=0.0, step=0.01,
-                          format="%.5f",                       width="small"),
-        "Rate Unit":  st.column_config.TextColumn("Rate Unit", width="small",
-                          disabled=True),
+        "Name":  st.column_config.TextColumn("Name",  width="large"),
+        "Unit":  st.column_config.SelectboxColumn(
+                     "Unit", options=RATE_UNITS,      width="small"),
+        "Price": st.column_config.NumberColumn(
+                     "Price", min_value=0.0, step=0.01,
+                     format="%.4f",                  width="small"),
+        "Rate":  st.column_config.NumberColumn(
+                     "Rate",  min_value=0.0, step=0.01,
+                     format="%.5f",                  width="small"),
     },
 )
 
-# Recompute the auto columns from the latest Unit selection
-rm_edited = rm_edited.copy()
-rm_edited["Price Unit"] = rm_edited["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
-rm_edited["Rate Unit"]  = rm_edited["Unit"]
+# Compute auto columns server-side from the latest Unit values
+rm_display = rm_edited.copy()
+rm_display["Price Unit"] = rm_display["Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
+rm_display["Rate Unit"]  = rm_display["Unit"]
+
+# Reorder for display: Name | Unit | Price | Price Unit | Rate | Rate Unit
+rm_display = rm_display[["Name", "Unit", "Price", "Price Unit", "Rate", "Rate Unit"]]
+
+# Show a read-only view with the auto-filled unit columns
+st.dataframe(
+    rm_display,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Name":       st.column_config.TextColumn("Name",       width="large"),
+        "Unit":       st.column_config.TextColumn("Unit",       width="small"),
+        "Price":      st.column_config.NumberColumn("Price",    format="%.4f", width="small"),
+        "Price Unit": st.column_config.TextColumn("Price Unit", width="small"),
+        "Rate":       st.column_config.NumberColumn("Rate",     format="%.5f", width="small"),
+        "Rate Unit":  st.column_config.TextColumn("Rate Unit",  width="small"),
+    },
+)
 
 # Active rows = rows where Name is filled
-rm_active = rm_edited[rm_edited["Name"].notna() & (rm_edited["Name"].str.strip() != "")].copy()
-rm_active["Line Cost"] = rm_active["Price"] * rm_active["Rate"] * working_hours
+rm_active = rm_display[rm_display["Name"].notna() & (rm_display["Name"].str.strip() != "")].copy()
+rm_active["Line Cost"] = (
+    pd.to_numeric(rm_active["Price"], errors="coerce").fillna(0.0)
+    * pd.to_numeric(rm_active["Rate"],  errors="coerce").fillna(0.0)
+    * working_hours
+)
 total_raw_material_cost = rm_active["Line Cost"].sum()
 
-# Total
+# Total — use text_input (disabled) so the value never gets clipped
 st.markdown("---")
-col_rm1, col_rm2 = st.columns([4, 1])
+col_rm1, col_rm2 = st.columns([3, 2])
 with col_rm1:
     st.markdown("**Total raw materials cost**")
 with col_rm2:
-    st.metric(label="", value=fmt_curr(total_raw_material_cost))
+    st.text_input("total_rm_display", value=fmt_curr(total_raw_material_cost),
+                  disabled=True, label_visibility="collapsed")
 
 st.divider()
 
