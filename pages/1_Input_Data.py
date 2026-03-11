@@ -1248,6 +1248,7 @@ st.divider()
 # ─────────────────────────────────────────────
 # SAVE
 if st.button("Save / Update Scenario", type="primary"):
+    if not st.session_state.sn_input:
         st.error("Please provide a Scenario Name before saving.")
     elif st.session_state.pc_input is None:
         st.error("Please provide a Main Product Capacity before saving.")
