@@ -63,19 +63,20 @@ PROJECT_CONTINGENCY: dict[tuple[str, str], float] = {
     ("Theoretical (1 or 2)", "High"):   0.40,
 }
 
-# Laboratory charges (% of OLC) keyed by material type
+# Laboratory charges (% of OLC) keyed by product type
 LAB_CHARGES: dict[str, float] = {
-    "Fluids":            0.10,
-    "Fluids and solids": 0.15,
-    "Solids":            0.20,
+    "Basic Chemical":    0.10,
+    "Specialty chemical":0.15,
+    "Consumer product":  0.20,
+    "Pharmaceutical":    0.25,
 }
 
 # Office labor (% of OLC) keyed by product type
 OFFICE_LABOR: dict[str, float] = {
-    "Basic Chemical":    0.05,
-    "Specialty chemical":0.08,
-    "Consumer product":  0.10,
-    "Pharmaceutical":    0.15,
+    "Basic Chemical":    0.10,
+    "Specialty chemical":0.175,
+    "Consumer product":  0.25,
+    "Pharmaceutical":    0.175,
 }
 
 MIN_SALARY = 273.0   # USD/month — regulatory floor
@@ -764,7 +765,7 @@ st.header("9. Fixed Costs")
 st.subheader("Labor Costs")
 
 def _overridable_number(label: str, ref_val: float, override_key: str,
-                        pct: bool = False, step: float = 0.01) -> float:
+                        step: float = 0.01) -> float:
     """
     Show a number_input pre-seeded from ref_val.
     Displays a green ✓ label when matching the reference, amber ⚠ when overridden.
@@ -776,10 +777,9 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
 
     color = "#e67e00" if is_overridden else "#2e7d32"
     hint  = " ⚠ overridden" if is_overridden else " ✓ reference"
-    suffix = " (%)" if pct else ""
     st.markdown(
         f'<p style="margin-bottom:0px;font-size:0.85rem;color:{color};">'
-        f'<b>{label}{suffix}</b>{hint}</p>',
+        f'<b>{label}</b>{hint}</p>',
         unsafe_allow_html=True,
     )
 
@@ -787,14 +787,13 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
         v = st.session_state.get(wk, rk)
         st.session_state[ok] = v if abs(v - rk) > 1e-9 else None
 
-    result = st.number_input(
+    return st.number_input(
         label, min_value=0.0, step=step,
         value=float(current),
         key=f"w_{override_key}",
         label_visibility="collapsed",
         on_change=_on_change,
     )
-    return result
 
 # ── Row 1: Operators & Salary ──────────────────
 col1, col2, col3, col4 = st.columns(4)
@@ -899,12 +898,12 @@ with col8:
 
 # Operating team factor = (labor_wh / worker_hours_shift) / (worker_shifts_week * worker_weeks_per_year)
 denom = worker_shifts_week * worker_weeks_per_year
-op_team_factor = (labor_wh / worker_hours_shift) / denom if denom > 0 else 0.0
+op_team_factor = math.ceil((labor_wh / worker_hours_shift) / denom) if denom > 0 else 0
 
 with col9:
     st.text_input("Operating team factor",
-                  value=f"{op_team_factor:.4f}", disabled=True,
-                  help="(Plant working hours / Worker hours per shift) / (Worker shifts per week × Worker weeks per year)")
+                  value=f"{op_team_factor}", disabled=True,
+                  help="ceil( (Plant working hours / Worker hours per shift) / (Worker shifts per week × Worker weeks per year) )")
 
 st.markdown("---")
 
@@ -919,23 +918,25 @@ with col1:
     st.text_input("OLC – Operating Labor Costs (USD/year)",
                   value=fmt_curr(olc), disabled=True)
 
-# ── Lab charges (overridable) ──────────────────
-lab_ref = LAB_CHARGES.get(st.session_state.dm_mat_type, 0.10)
+# ── Lab charges (overridable, shown as %) ──────
+lab_ref_pct = LAB_CHARGES.get(st.session_state.dm_prod_type, 0.10) * 100.0
 with col2:
-    lab_pct = _overridable_number(
-        f"Laboratory charges (% of OLC) [ref: {lab_ref*100:.0f}% — {st.session_state.dm_mat_type}]",
-        lab_ref, "lab_charges_override", pct=False, step=0.01
+    lab_pct_input = _overridable_number(
+        f"Laboratory charges (% of OLC)  [ref: {lab_ref_pct:.2f}% — {st.session_state.dm_prod_type}]",
+        lab_ref_pct, "lab_charges_override", step=0.1
     )
-    lab_pct = max(0.0, lab_pct)
+    lab_pct_input = max(0.0, lab_pct_input)
+lab_pct = lab_pct_input / 100.0   # convert back to fraction for formula
 
-# ── Office labor (overridable) ─────────────────
-office_ref = OFFICE_LABOR.get(st.session_state.dm_prod_type, 0.05)
+# ── Office labor (overridable, shown as %) ─────
+office_ref_pct = OFFICE_LABOR.get(st.session_state.dm_prod_type, 0.10) * 100.0
 with col3:
-    office_pct = _overridable_number(
-        f"Office labor (% of OLC) [ref: {office_ref*100:.0f}% — {st.session_state.dm_prod_type}]",
-        office_ref, "office_labor_override", pct=False, step=0.01
+    office_pct_input = _overridable_number(
+        f"Office labor (% of OLC)  [ref: {office_ref_pct:.2f}% — {st.session_state.dm_prod_type}]",
+        office_ref_pct, "office_labor_override", step=0.1
     )
-    office_pct = max(0.0, office_pct)
+    office_pct_input = max(0.0, office_pct_input)
+office_pct = office_pct_input / 100.0   # convert back to fraction for formula
 
 total_labor_costs = olc * (1.0 + lab_pct + office_pct)
 
