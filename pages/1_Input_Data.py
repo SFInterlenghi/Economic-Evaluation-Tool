@@ -1082,7 +1082,7 @@ op_sup_ref_pct = OPERATING_SUPPLIES.get(st.session_state.dm_severity, 0.15) * 10
 col1, col2, col3 = st.columns(3)
 with col1:
     maint_pct_input = _overridable_number(
-        f"Maintenance and repairs (% of CAPEX)  [ref: {aint_ref_pct:.2f}% — {st.session_state.dm_mat_type} / {st.session_state.dm_prod_type}]",
+        f"Maintenance and repairs (% of CAPEX)  [ref: {maint_ref_pct:.2f}% — {st.session_state.dm_mat_type} / {st.session_state.dm_prod_type}]",
         maint_ref_pct, "maint_repair_override", step=0.1
     )
 maint_pct = maint_pct_input / 100.0
