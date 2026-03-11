@@ -619,7 +619,8 @@ st.header("Variable Costs")
 # ── Raw Materials ──────────────────────────────
 st.subheader("Raw Materials")
 
-RATE_UNITS = list(RATE_TO_PRICE_UNIT.keys())
+RATE_UNITS  = list(RATE_TO_PRICE_UNIT.keys())
+PRICE_UNITS = list(dict.fromkeys(RATE_TO_PRICE_UNIT.values()))  # unique, order-preserved
 
 # Load existing rows
 existing_rm = (
@@ -628,7 +629,7 @@ existing_rm = (
     .get("Raw Materials", [])
 )
 
-_blank_row = {"Name": None, "Rate": 0.0, "Rate Unit": RATE_UNITS[0], "Price": 0.0, "Price Unit": ""}
+_blank_row = {"Name": None, "Rate": 0.0, "Rate Unit": RATE_UNITS[0], "Price": 0.0, "Price Unit": PRICE_UNITS[0]}
 if existing_rm:
     rm_df = pd.DataFrame(existing_rm)[["Name", "Rate", "Rate Unit", "Price", "Price Unit"]]
 else:
@@ -641,23 +642,23 @@ rm_edited = st.data_editor(
     use_container_width=True,
     hide_index=True,
     column_config={
-        "Name":       st.column_config.TextColumn("Name",      width="large"),
+        "Name":       st.column_config.TextColumn("Name",       width="large"),
         "Rate":       st.column_config.NumberColumn(
                           "Rate", min_value=0.0, step=0.01,
-                          format="%.5f",                       width="small"),
+                          format="%.5f",                        width="small"),
         "Rate Unit":  st.column_config.SelectboxColumn(
-                          "Rate Unit", options=RATE_UNITS,     width="small"),
+                          "Rate Unit", options=RATE_UNITS,      width="small"),
         "Price":      st.column_config.NumberColumn(
                           "Price", min_value=0.0, step=0.01,
-                          format="%.4f",                       width="small"),
-        "Price Unit": st.column_config.TextColumn(
-                          "Price Unit",                        width="small"),
+                          format="%.4f",                        width="small"),
+        "Price Unit": st.column_config.SelectboxColumn(
+                          "Price Unit", options=PRICE_UNITS,    width="small"),
     },
 )
 
 # Recompute Price Unit server-side from Rate Unit so it's always correct
 rm_edited = rm_edited.copy()
-rm_edited["Price Unit"] = rm_edited["Rate Unit"].map(RATE_TO_PRICE_UNIT).fillna("")
+rm_edited["Price Unit"] = rm_edited["Rate Unit"].map(RATE_TO_PRICE_UNIT).fillna(PRICE_UNITS[0])
 
 # Active rows and total
 rm_active = rm_edited[rm_edited["Name"].notna() & (rm_edited["Name"].str.strip() != "")].copy()
