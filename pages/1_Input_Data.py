@@ -1292,36 +1292,13 @@ st.divider()
 # ─────────────────────────────────────────────
 st.header("10. Working Capital")
 
-# ── Method selection (mutually exclusive checkboxes) ──
-col_wm1, col_wm2 = st.columns(2)
-with col_wm1:
-    use_pct = st.checkbox(
-        "Percentage of CAPEX",
-        value=(st.session_state.wc_method == "Percentage"),
-        key="_wc_pct_cb",
-    )
-with col_wm2:
-    use_cycle = st.checkbox(
-        "Operating Cycle",
-        value=(st.session_state.wc_method == "Operating Cycle"),
-        key="_wc_cyc_cb",
-    )
-
-# Enforce mutual exclusion — last click wins
-if use_pct and use_cycle:
-    # Determine which one just changed by comparing to stored method
-    if st.session_state.wc_method == "Percentage":
-        st.session_state.wc_method = "Operating Cycle"
-    else:
-        st.session_state.wc_method = "Percentage"
-    st.rerun()
-elif use_pct:
-    st.session_state.wc_method = "Percentage"
-elif use_cycle:
-    st.session_state.wc_method = "Operating Cycle"
-# (if both unchecked, keep current method)
-
-wc_method = st.session_state.wc_method
+wc_method = st.radio(
+    "Working capital method",
+    options=["Percentage", "Operating Cycle"],
+    index=0 if st.session_state.wc_method == "Percentage" else 1,
+    horizontal=True,
+    key="wc_method",
+)
 st.markdown("---")
 
 if wc_method == "Percentage":
