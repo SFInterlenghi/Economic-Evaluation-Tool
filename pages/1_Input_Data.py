@@ -1204,6 +1204,7 @@ direct_var_costs = total_raw_material_cost + total_chemical_utilities - total_re
 _olc_coeff   = admin_ov_pct + admin_costs_pct
 _capex_coeff = mfg_ov_pct + taxes_ins_pct + mfg_costs_pct
 
+# OPEX base (shared numerator — used by dist_sell, r_d, and patents)
 _numerator   = (direct_var_costs
                 + total_labor_costs
                 + supply_maint_costs
@@ -1212,90 +1213,42 @@ _numerator   = (direct_var_costs
 _denominator = 1.0 - patents_pct - dist_sell_pct - r_d_pct
 opex = _numerator / _denominator if _denominator > 0 else 0.0
 
+# AFC = admin_ov×OLC + (mfg_ov + taxes_ins)×CAPEX + patents×OPEX
 afc = (admin_ov_pct * olc
        + (mfg_ov_pct + taxes_ins_pct) * project_capex
        + patents_pct * opex)
 
+# Indirect = adm_costs×OLC + mfg_costs×CAPEX + (dist_sell + r_d)×OPEX
+# Note: patents is already included in AFC, NOT repeated here
+_opex_base = _numerator / _denominator if _denominator > 0 else 0.0
 indirect_fixed_costs = (admin_costs_pct * olc
-                        + mfg_costs_pct * project_capex
-                        + dist_sell_pct * opex
-                        + r_d_pct       * opex
-                        + patents_pct   * opex)
+                        + mfg_costs_pct  * project_capex
+                        + (dist_sell_pct + r_d_pct) * _opex_base)
 
 direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
 total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
 
-# ── Step-by-step AFC substitution (for validation) ──────────────────────
-with st.expander("🔍 Step-by-step AFC substitution", expanded=True):
-    st.markdown("### Step 1 — Inputs")
+# ── Step-by-step Indirect Fixed Costs breakdown ──────────────────────────
+with st.expander("🔍 Step-by-step Indirect Fixed Costs substitution", expanded=True):
+    _ifc_t1 = admin_costs_pct * olc
+    _ifc_t2 = mfg_costs_pct * project_capex
+    _ifc_t3 = (dist_sell_pct + r_d_pct) * _opex_base
+    st.markdown("### Indirect = adm_costs×OLC + mfg_costs×CAPEX + (dist_sell + r&d)×OPEX")
     st.markdown(f"""
-| Variable | Symbol | Value |
+| Term | Calculation | Value |
 |---|---|---|
-| OLC | OLC | {fmt_curr(olc)} |
-| Project CAPEX | CAPEX | {fmt_curr(project_capex)} |
-| Administrative overhead % | admin\_ov | {admin_ov_pct*100:.4f}% |
-| Manufacturing overhead % | mfg\_ov | {mfg_ov_pct*100:.4f}% |
-| Taxes & insurance % | taxes\_ins | {taxes_ins_pct*100:.4f}% |
-| Patents & royalties % | patents | {patents_pct*100:.4f}% |
-| Administrative costs % | admin\_costs | {admin_costs_pct*100:.4f}% |
-| Manufacturing costs % | mfg\_costs | {mfg_costs_pct*100:.4f}% |
-| Distribution & selling % | dist\_sell | {dist_sell_pct*100:.4f}% |
-| Research & development % | r\_d | {r_d_pct*100:.4f}% |
+| adm_costs × OLC | {admin_costs_pct*100:.4f}% × {fmt_curr(olc)} | {fmt_curr(_ifc_t1)} |
+| mfg_costs × CAPEX | {mfg_costs_pct*100:.4f}% × {fmt_curr(project_capex)} | {fmt_curr(_ifc_t2)} |
+| OPEX numerator | TVC + Labor + Supply + (adm_ov+adm_costs)×OLC + (mfg_ov+taxes+mfg_costs)×CAPEX | {fmt_curr(_numerator)} |
+| OPEX denominator | 1 − {patents_pct*100:.4f}% − {dist_sell_pct*100:.4f}% − {r_d_pct*100:.4f}% | {_denominator:.6f} |
+| OPEX | {fmt_curr(_numerator)} ÷ {_denominator:.6f} | {fmt_curr(_opex_base)} |
+| (dist_sell + r&d) × OPEX | ({dist_sell_pct*100:.4f}% + {r_d_pct*100:.4f}%) × {fmt_curr(_opex_base)} | {fmt_curr(_ifc_t3)} |
+| **Indirect fixed costs** | **sum of above** | **{fmt_curr(indirect_fixed_costs)}** |
 """)
-
-    st.markdown("### Step 2 — Direct variable costs (TVC)")
     st.markdown(f"""
-| Component | Value |
+| Cost summary | Value |
 |---|---|
-| Raw materials | {fmt_curr(total_raw_material_cost)} |
-| Chemical inputs & utilities | {fmt_curr(total_chemical_utilities)} |
-| Credits & byproducts (−) | {fmt_curr(total_revenue)} |
-| **TVC = raw + chem − credits** | **{fmt_curr(direct_var_costs)}** |
-""")
-
-    _term_olc   = _olc_coeff * olc
-    _term_capex_num = _capex_coeff * project_capex
-    st.markdown("### Step 3 — OPEX numerator")
-    st.markdown(f"""
-| Term | Calculation | Value |
-|---|---|---|
-| TVC | — | {fmt_curr(direct_var_costs)} |
-| Total labor costs | — | {fmt_curr(total_labor_costs)} |
-| Supply & maintenance | — | {fmt_curr(supply_maint_costs)} |
-| (admin\_ov + admin\_costs) × OLC | ({admin_ov_pct*100:.4f}% + {admin_costs_pct*100:.4f}%) × {fmt_curr(olc)} | {fmt_curr(_term_olc)} |
-| (mfg\_ov + taxes\_ins + mfg\_costs) × CAPEX | ({mfg_ov_pct*100:.4f}% + {taxes_ins_pct*100:.4f}% + {mfg_costs_pct*100:.4f}%) × {fmt_curr(project_capex)} | {fmt_curr(_term_capex_num)} |
-| **Numerator** | **sum of above** | **{fmt_curr(_numerator)}** |
-""")
-
-    st.markdown("### Step 4 — OPEX denominator & OPEX")
-    st.markdown(f"""
-| Term | Calculation | Value |
-|---|---|---|
-| Denominator | 1 − {patents_pct*100:.4f}% − {dist_sell_pct*100:.4f}% − {r_d_pct*100:.4f}% | {_denominator:.6f} |
-| **OPEX = numerator / denominator** | {fmt_curr(_numerator)} ÷ {_denominator:.6f} | **{fmt_curr(opex)}** |
-""")
-
-    _afc_t1 = admin_ov_pct * olc
-    _afc_t2 = (mfg_ov_pct + taxes_ins_pct) * project_capex
-    _afc_t3 = patents_pct * opex
-    st.markdown("### Step 5 — AFC = admin\_ov×OLC + (mfg\_ov + taxes\_ins)×CAPEX + patents×OPEX")
-    st.markdown(f"""
-| Term | Calculation | Value |
-|---|---|---|
-| admin\_ov × OLC | {admin_ov_pct*100:.4f}% × {fmt_curr(olc)} | {fmt_curr(_afc_t1)} |
-| (mfg\_ov + taxes\_ins) × CAPEX | ({mfg_ov_pct*100:.4f}% + {taxes_ins_pct*100:.4f}%) × {fmt_curr(project_capex)} | {fmt_curr(_afc_t2)} |
-| patents × OPEX | {patents_pct*100:.4f}% × {fmt_curr(opex)} | {fmt_curr(_afc_t3)} |
-| **AFC** | **sum of above** | **{fmt_curr(afc)}** |
-""")
-
-    st.markdown("### Step 6 — Cost summary")
-    st.markdown(f"""
-| Cost item | Value |
-|---|---|
-| Total labor costs | {fmt_curr(total_labor_costs)} |
-| Supply & maintenance | {fmt_curr(supply_maint_costs)} |
-| AFC | {fmt_curr(afc)} |
-| **Direct fixed costs** | **{fmt_curr(direct_fixed_costs)}** |
+| Direct fixed costs | {fmt_curr(direct_fixed_costs)} |
 | Indirect fixed costs | {fmt_curr(indirect_fixed_costs)} |
 | **Total fixed costs** | **{fmt_curr(total_fixed_costs)}** |
 | **OPEX** | **{fmt_curr(opex)}** |
