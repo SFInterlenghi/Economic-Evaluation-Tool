@@ -280,6 +280,14 @@ DEFAULTS = {
     "mfg_costs_override":      None,
     "dist_selling_override":   None,
     "r_and_d_override":        None,
+    # Working capital
+    "wc_method":               "Percentage",   # "Percentage" or "Operating Cycle"
+    "wc_pct":                  5.0,            # % of CAPEX
+    "wc_equiv_cash_days":      30.0,
+    "wc_raw_mat_days":         15.0,
+    "wc_accounts_rec_days":    30.0,
+    "wc_accrued_payroll_days": 30.0,
+    "wc_accounts_pay_days":    30.0,
 }
 
 # ─────────────────────────────────────────────
@@ -287,6 +295,23 @@ DEFAULTS = {
 # ─────────────────────────────────────────────
 def fmt_curr(val: float) -> str:
     return f"${val:,.2f}"
+
+
+def _result_row(label: str, value: float, key: str, formula: str = ""):
+    """Render a labelled result row. If formula is provided, appends a ? tooltip."""
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        if formula:
+            st.markdown(
+                f'**{label}** <span title="{formula}" '
+                f'style="cursor:help;color:#888;font-size:0.85rem;">ⓘ</span>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(f"**{label}**")
+    with c2:
+        st.text_input(key, value=fmt_curr(value), disabled=True,
+                      label_visibility="collapsed")
 
 
 def reset_state(keys: dict = DEFAULTS):
@@ -493,6 +518,14 @@ def load_scenario_data():
         "mfg_costs_override":        ("Mfg Costs Override",       None),
         "dist_selling_override":     ("Dist Selling Override",    None),
         "r_and_d_override":          ("R And D Override",         None),
+        # Working capital
+        "wc_method":                 ("WC Method",                "Percentage"),
+        "wc_pct":                    ("WC Pct",                   5.0),
+        "wc_equiv_cash_days":        ("WC Equiv Cash Days",       30.0),
+        "wc_raw_mat_days":           ("WC Raw Mat Days",          15.0),
+        "wc_accounts_rec_days":      ("WC Accounts Rec Days",     30.0),
+        "wc_accrued_payroll_days":   ("WC Accrued Payroll Days",  30.0),
+        "wc_accounts_pay_days":      ("WC Accounts Pay Days",     30.0),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -1229,62 +1262,159 @@ direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
 total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
 
 # ── Step-by-step Indirect Fixed Costs breakdown ──────────────────────────
-with st.expander("🔍 Step-by-step Indirect Fixed Costs substitution", expanded=True):
-    _ifc_t1 = admin_costs_pct * olc
-    _ifc_t2 = mfg_costs_pct * project_capex
-    _ifc_t3 = (dist_sell_pct + r_d_pct) * _opex_base
-    st.markdown("### Indirect = adm_costs×OLC + mfg_costs×CAPEX + (dist_sell + r&d)×OPEX")
-    st.markdown(f"""
-| Term | Calculation | Value |
-|---|---|---|
-| adm_costs × OLC | {admin_costs_pct*100:.4f}% × {fmt_curr(olc)} | {fmt_curr(_ifc_t1)} |
-| mfg_costs × CAPEX | {mfg_costs_pct*100:.4f}% × {fmt_curr(project_capex)} | {fmt_curr(_ifc_t2)} |
-| OPEX numerator | TVC + Labor + Supply + (adm_ov+adm_costs)×OLC + (mfg_ov+taxes+mfg_costs)×CAPEX | {fmt_curr(_numerator)} |
-| OPEX denominator | 1 − {patents_pct*100:.4f}% − {dist_sell_pct*100:.4f}% − {r_d_pct*100:.4f}% | {_denominator:.6f} |
-| OPEX | {fmt_curr(_numerator)} ÷ {_denominator:.6f} | {fmt_curr(_opex_base)} |
-| (dist_sell + r&d) × OPEX | ({dist_sell_pct*100:.4f}% + {r_d_pct*100:.4f}%) × {fmt_curr(_opex_base)} | {fmt_curr(_ifc_t3)} |
-| **Indirect fixed costs** | **sum of above** | **{fmt_curr(indirect_fixed_costs)}** |
-""")
-    st.markdown(f"""
-| Cost summary | Value |
-|---|---|
-| Direct fixed costs | {fmt_curr(direct_fixed_costs)} |
-| Indirect fixed costs | {fmt_curr(indirect_fixed_costs)} |
-| **Total fixed costs** | **{fmt_curr(total_fixed_costs)}** |
-| **OPEX** | **{fmt_curr(opex)}** |
-""")
 
 st.markdown("---")
-col_afc1, col_afc2 = st.columns([3, 2])
-with col_afc1:
-    st.markdown("**Additional fixed costs (USD/year)**")
-with col_afc2:
-    st.text_input("afc_display", value=fmt_curr(afc),
-                  disabled=True, label_visibility="collapsed")
+_result_row("Additional fixed costs (USD/year)", afc, "afc_display",
+    "AFC = admin_overhead×OLC + (mfg_overhead + taxes_insurance)×CAPEX + patents×OPEX")
 
 st.markdown("---")
-col_dfc1, col_dfc2 = st.columns([3, 2])
-with col_dfc1:
-    st.markdown("**Direct fixed costs (USD/year)**")
-with col_dfc2:
-    st.text_input("dfc_display", value=fmt_curr(direct_fixed_costs),
-                  disabled=True, label_visibility="collapsed")
+_result_row("Direct fixed costs (USD/year)", direct_fixed_costs, "dfc_display",
+    "Direct fixed costs = Total labor costs + Supply & maintenance + AFC")
 
 st.markdown("---")
-col_ifc1, col_ifc2 = st.columns([3, 2])
-with col_ifc1:
-    st.markdown("**Indirect fixed costs (USD/year)**")
-with col_ifc2:
-    st.text_input("ifc_display", value=fmt_curr(indirect_fixed_costs),
-                  disabled=True, label_visibility="collapsed")
+_result_row("Indirect fixed costs (USD/year)", indirect_fixed_costs, "ifc_display",
+    "Indirect fixed costs = adm_costs×OLC + mfg_costs×CAPEX + (dist_sell + R&D)×OPEX")
 
 st.markdown("---")
-col_tfc1, col_tfc2 = st.columns([3, 2])
-with col_tfc1:
-    st.markdown("**Total fixed costs (USD/year)**")
-with col_tfc2:
-    st.text_input("tfc_display", value=fmt_curr(total_fixed_costs),
-                  disabled=True, label_visibility="collapsed")
+_result_row("Total fixed costs (USD/year)", total_fixed_costs, "tfc_display",
+    "Total fixed costs = Direct fixed costs + Indirect fixed costs")
+
+st.divider()
+
+total_opex = direct_var_costs + direct_fixed_costs + indirect_fixed_costs
+_result_row("Total OPEX (USD/year)", total_opex, "total_opex_display",
+    "Total OPEX = Total variable costs (TVC) + Direct fixed costs + Indirect fixed costs")
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# 10. Working Capital
+# ─────────────────────────────────────────────
+st.header("10. Working Capital")
+
+# ── Method selection (mutually exclusive checkboxes) ──
+col_wm1, col_wm2 = st.columns(2)
+with col_wm1:
+    use_pct = st.checkbox(
+        "Percentage of CAPEX",
+        value=(st.session_state.wc_method == "Percentage"),
+        key="_wc_pct_cb",
+    )
+with col_wm2:
+    use_cycle = st.checkbox(
+        "Operating Cycle",
+        value=(st.session_state.wc_method == "Operating Cycle"),
+        key="_wc_cyc_cb",
+    )
+
+# Enforce mutual exclusion — last click wins
+if use_pct and use_cycle:
+    # Determine which one just changed by comparing to stored method
+    if st.session_state.wc_method == "Percentage":
+        st.session_state.wc_method = "Operating Cycle"
+    else:
+        st.session_state.wc_method = "Percentage"
+    st.rerun()
+elif use_pct:
+    st.session_state.wc_method = "Percentage"
+elif use_cycle:
+    st.session_state.wc_method = "Operating Cycle"
+# (if both unchecked, keep current method)
+
+wc_method = st.session_state.wc_method
+st.markdown("---")
+
+if wc_method == "Percentage":
+    col1, col2 = st.columns(2)
+    with col1:
+        wc_pct_input = st.number_input(
+            "Working capital percentage (% of CAPEX)",
+            min_value=0.0, step=0.5,
+            value=st.session_state.wc_pct,
+            key="wc_pct",
+        )
+    working_capital = project_capex * (wc_pct_input / 100.0)
+    with col2:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        _result_row("Working capital (USD)", working_capital, "wc_display",
+            "Working capital = CAPEX × Working capital %")
+
+else:  # Operating Cycle
+    # ── Current Assets inputs ──────────────────
+    st.markdown("##### Current Assets")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        equiv_cash_days = st.number_input(
+            "Equivalent cash (days of OPEX)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.wc_equiv_cash_days,
+            key="wc_equiv_cash_days",
+        )
+    with col2:
+        raw_mat_days = st.number_input(
+            "Raw material inventory (days of variable costs)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.wc_raw_mat_days,
+            key="wc_raw_mat_days",
+        )
+    with col3:
+        acc_rec_days = st.number_input(
+            "Accounts receivable (days of OPEX and simple ROI)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.wc_accounts_rec_days,
+            key="wc_accounts_rec_days",
+        )
+
+    # PMT(0.15, 10, -CAPEX) — annual payment on a 10-year loan at 15%
+    # PMT = r×PV / (1 − (1+r)^−n)
+    _r, _n = 0.15, 10
+    simple_roi = (_r * project_capex) / (1.0 - (1.0 + _r) ** (-_n)) if project_capex > 0 else 0.0
+
+    current_assets = (
+        (equiv_cash_days * total_opex
+         + direct_var_costs * raw_mat_days
+         + acc_rec_days * (total_opex + simple_roi))
+        * (24.0 / working_hours)
+    )
+
+    st.markdown("---")
+    _result_row("Current assets (USD)", current_assets, "current_assets_display",
+        "Current assets = (Equiv_cash×OPEX + TVC×Raw_mat_days + Acc_rec×(OPEX + PMT(15%,10,-CAPEX))) × (24 / working_hours)")
+
+    st.markdown("---")
+
+    # ── Current Liabilities inputs ─────────────
+    st.markdown("##### Current Liabilities")
+    col1, col2 = st.columns(2)
+    with col1:
+        acc_payroll_days = st.number_input(
+            "Accrued payroll (days of OLC)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.wc_accrued_payroll_days,
+            key="wc_accrued_payroll_days",
+        )
+    with col2:
+        acc_pay_days = st.number_input(
+            "Accounts payable (days of OPEX)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.wc_accounts_pay_days,
+            key="wc_accounts_pay_days",
+        )
+
+    current_liabilities = (
+        (acc_payroll_days * olc + acc_pay_days * total_opex)
+        * (24.0 / working_hours)
+    )
+
+    st.markdown("---")
+    _result_row("Current liabilities (USD)", current_liabilities, "current_liab_display",
+        "Current liabilities = (Accrued_payroll×OLC + Acc_payable×OPEX) × (24 / working_hours)")
+
+    working_capital = current_assets - current_liabilities
+
+    st.markdown("---")
+    _result_row("Working capital (USD)", working_capital, "wc_display",
+        "Working capital = Current assets − Current liabilities")
 
 st.divider()
 
@@ -1419,6 +1549,16 @@ if st.button("Save / Update Scenario", type="primary"):
             "OPEX":                      opex,
             "Indirect Fixed Costs":      indirect_fixed_costs,
             "Total Fixed Costs":         total_fixed_costs,
+            "Total OPEX":                total_opex,
+            # Working capital
+            "WC Method":                 wc_method,
+            "WC Pct":                    st.session_state.get("wc_pct", 5.0),
+            "WC Equiv Cash Days":        st.session_state.get("wc_equiv_cash_days", 30.0),
+            "WC Raw Mat Days":           st.session_state.get("wc_raw_mat_days", 15.0),
+            "WC Accounts Rec Days":      st.session_state.get("wc_accounts_rec_days", 30.0),
+            "WC Accrued Payroll Days":   st.session_state.get("wc_accrued_payroll_days", 30.0),
+            "WC Accounts Pay Days":      st.session_state.get("wc_accounts_pay_days", 30.0),
+            "Working Capital":           working_capital,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
