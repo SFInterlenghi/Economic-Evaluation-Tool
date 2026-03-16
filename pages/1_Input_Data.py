@@ -174,7 +174,37 @@ R_AND_D: dict[tuple[str,str], float] = {
     ("Theoretical (1 or 2)", "Pharmaceutical"):     0.170,
 }
 
-# Plant Cost Index keyed by year (int)
+# TIC accuracy — Lower bound (%) keyed by (TRL, info_availability); None = N/A
+TIC_LOWER: dict[tuple[str, str], float | None] = {
+    ("Industrial (8 or 9)", "High"):    -15.0,
+    ("Industrial (8 or 9)", "Medium"):  -20.0,
+    ("Industrial (8 or 9)", "Low"):     -25.0,
+    ("Pilot (5 to 7)",       "High"):    None,
+    ("Pilot (5 to 7)",       "Medium"): -25.0,
+    ("Pilot (5 to 7)",       "Low"):    -30.0,
+    ("Bench (3 or 4)",       "High"):    None,
+    ("Bench (3 or 4)",       "Medium"):  None,
+    ("Bench (3 or 4)",       "Low"):    -40.0,
+    ("Theoretical (1 or 2)", "High"):    None,
+    ("Theoretical (1 or 2)", "Medium"):  None,
+    ("Theoretical (1 or 2)", "Low"):    -50.0,
+}
+
+# TIC accuracy — Upper bound (%) keyed by (TRL, info_availability); None = N/A
+TIC_UPPER: dict[tuple[str, str], float | None] = {
+    ("Industrial (8 or 9)", "High"):    20.0,
+    ("Industrial (8 or 9)", "Medium"):  30.0,
+    ("Industrial (8 or 9)", "Low"):     40.0,
+    ("Pilot (5 to 7)",       "High"):    None,
+    ("Pilot (5 to 7)",       "Medium"):  40.0,
+    ("Pilot (5 to 7)",       "Low"):     50.0,
+    ("Bench (3 or 4)",       "High"):    None,
+    ("Bench (3 or 4)",       "Medium"):  None,
+    ("Bench (3 or 4)",       "Low"):     70.0,
+    ("Theoretical (1 or 2)", "High"):    None,
+    ("Theoretical (1 or 2)", "Medium"):  None,
+    ("Theoretical (1 or 2)", "Low"):    100.0,
+}
 PLANT_COST_INDEX: dict[int, float] = {
     2000: 102.44, 2001: 102.32, 2002: 102.09, 2003: 106.35,
     2004: 119.36, 2005: 128.89, 2006: 135.32, 2007: 140.98,
@@ -281,13 +311,24 @@ DEFAULTS = {
     "dist_selling_override":   None,
     "r_and_d_override":        None,
     # Working capital
-    "wc_method":               "Percentage",   # "Percentage" or "Operating Cycle"
-    "wc_pct":                  5.0,            # % of CAPEX
+    "wc_method":               "Percentage",
+    "wc_pct":                  5.0,
     "wc_equiv_cash_days":      30.0,
     "wc_raw_mat_days":         15.0,
     "wc_accounts_rec_days":    30.0,
     "wc_accrued_payroll_days": 30.0,
     "wc_accounts_pay_days":    30.0,
+    # Startup costs
+    "startup_method":          "Multiple Factors",
+    "startup_single_pct":      8.0,
+    "startup_op_training_days":150.0,
+    "startup_commerc_pct":     5.0,
+    "startup_inefficiency_pct":4.0,
+    # Total investment summary
+    "additional_costs":        0.0,
+    # TIC accuracy overrides
+    "tic_lower_override":      None,
+    "tic_upper_override":      None,
 }
 
 # ─────────────────────────────────────────────
@@ -526,6 +567,17 @@ def load_scenario_data():
         "wc_accounts_rec_days":      ("WC Accounts Rec Days",     30.0),
         "wc_accrued_payroll_days":   ("WC Accrued Payroll Days",  30.0),
         "wc_accounts_pay_days":      ("WC Accounts Pay Days",     30.0),
+        # Startup costs
+        "startup_method":            ("Startup Method",           "Multiple Factors"),
+        "startup_single_pct":        ("Startup Single Pct",       8.0),
+        "startup_op_training_days":  ("Startup Op Training Days", 150.0),
+        "startup_commerc_pct":       ("Startup Commerc Pct",      5.0),
+        "startup_inefficiency_pct":  ("Startup Inefficiency Pct", 4.0),
+        # Total investment
+        "additional_costs":          ("Additional Costs",         0.0),
+        # TIC overrides
+        "tic_lower_override":        ("TIC Lower Override",       None),
+        "tic_upper_override":        ("TIC Upper Override",       None),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -1399,7 +1451,140 @@ st.divider()
 # constants above and used programmatically — no UI section needed.
 
 # ─────────────────────────────────────────────
-# SAVE
+# 11. Startup Costs
+# ─────────────────────────────────────────────
+st.header("11. Startup Costs")
+
+startup_method = st.radio(
+    "Startup costs method",
+    options=["Single Factor", "Multiple Factors"],
+    index=0 if st.session_state.startup_method == "Single Factor" else 1,
+    horizontal=True,
+    key="startup_method",
+)
+st.markdown("---")
+
+if startup_method == "Single Factor":
+    col1, col2 = st.columns(2)
+    with col1:
+        startup_single_pct = st.number_input(
+            "Startup cost single factor (% of CAPEX)",
+            min_value=0.0, step=0.5,
+            value=st.session_state.startup_single_pct,
+            key="startup_single_pct",
+        )
+    startup_costs = project_capex * (startup_single_pct / 100.0)
+    with col2:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        _result_row("Startup costs (USD)", startup_costs, "startup_display",
+            "Startup costs = CAPEX × Startup single factor %")
+
+else:  # Multiple Factors
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        startup_op_training_days = st.number_input(
+            "Operational training (days of OLC)",
+            min_value=0.0, step=1.0,
+            value=st.session_state.startup_op_training_days,
+            key="startup_op_training_days",
+        )
+    with col2:
+        startup_commerc_pct = st.number_input(
+            "Commercialization costs (% of direct field costs)",
+            min_value=0.0, step=0.5,
+            value=st.session_state.startup_commerc_pct,
+            key="startup_commerc_pct",
+        )
+    with col3:
+        startup_inefficiency_pct = st.number_input(
+            "Startup inefficiency (% of OPEX)",
+            min_value=0.0, step=0.5,
+            value=st.session_state.startup_inefficiency_pct,
+            key="startup_inefficiency_pct",
+        )
+
+    startup_costs = (
+        startup_op_training_days * olc * (24.0 / working_hours)
+        + total_direct_field_costs * (startup_commerc_pct / 100.0)
+        + (startup_inefficiency_pct / 100.0) * total_opex
+    )
+    st.markdown("---")
+    _result_row("Startup costs (USD)", startup_costs, "startup_costs_display",
+        "Startup costs = Op_training×OLC×(24/working_hours) + Commerc%×Direct_field_costs + Inefficiency%×Total_OPEX")
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# Total Investment Summary
+# ─────────────────────────────────────────────
+st.subheader("Total Investment Summary")
+
+col1, col2 = st.columns([3, 2])
+with col1:
+    additional_costs = st.number_input(
+        "Additional costs (USD)",
+        min_value=0.0, step=1000.0,
+        key="additional_costs",
+        help="Any additional investment cost not captured above.",
+    )
+
+total_investment = project_capex + working_capital + startup_costs + additional_costs
+
+st.markdown("---")
+_result_row("Project CAPEX (USD)", project_capex, "ti_capex",
+    "Project CAPEX = Project costs × (1 + contingency) × time_update_factor × location_factor")
+st.markdown("---")
+_result_row("Working capital (USD)", working_capital, "ti_wc",
+    "Working capital — see section 10")
+st.markdown("---")
+_result_row("Startup costs (USD)", startup_costs, "ti_startup",
+    "Startup costs — see section 11")
+st.markdown("---")
+_result_row("Additional costs (USD)", additional_costs, "ti_additional",
+    "User-defined additional investment costs")
+st.markdown("---")
+_result_row("Total investment costs (USD)", total_investment, "ti_total",
+    "TIC = Project CAPEX + Working capital + Startup costs + Additional costs")
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# Total Investment Cost (TIC) Accuracy
+# ─────────────────────────────────────────────
+st.subheader("Total Investment Cost (TIC) Accuracy")
+st.caption(f"Reference: TRL = {st.session_state.dm_trl} | "
+           f"Information availability = {st.session_state.dm_info_avail}")
+
+_tic_key = (st.session_state.dm_trl, st.session_state.dm_info_avail)
+tic_lower_ref = TIC_LOWER.get(_tic_key)
+tic_upper_ref = TIC_UPPER.get(_tic_key)
+
+col1, col2 = st.columns(2)
+with col1:
+    if tic_lower_ref is None:
+        st.markdown('<p style="margin-bottom:0px;font-size:0.85rem;"><b>Lower bound (%)</b></p>',
+                    unsafe_allow_html=True)
+        st.info(f"N/A for {st.session_state.dm_trl} / {st.session_state.dm_info_avail}")
+        tic_lower_input = None
+    else:
+        tic_lower_input = _overridable_number(
+            f"Lower bound (%)  [ref: {tic_lower_ref:.1f}%]",
+            tic_lower_ref, "tic_lower_override", step=0.5
+        )
+
+with col2:
+    if tic_upper_ref is None:
+        st.markdown('<p style="margin-bottom:0px;font-size:0.85rem;"><b>Upper bound (%)</b></p>',
+                    unsafe_allow_html=True)
+        st.info(f"N/A for {st.session_state.dm_trl} / {st.session_state.dm_info_avail}")
+        tic_upper_input = None
+    else:
+        tic_upper_input = _overridable_number(
+            f"Upper bound (%)  [ref: {tic_upper_ref:.1f}%]",
+            tic_upper_ref, "tic_upper_override", step=0.5
+        )
+
+st.divider()
 if st.button("Save / Update Scenario", type="primary"):
     if not st.session_state.sn_input:
         st.error("Please provide a Scenario Name before saving.")
@@ -1536,6 +1721,21 @@ if st.button("Save / Update Scenario", type="primary"):
             "WC Accrued Payroll Days":   st.session_state.get("wc_accrued_payroll_days", 30.0),
             "WC Accounts Pay Days":      st.session_state.get("wc_accounts_pay_days", 30.0),
             "Working Capital":           working_capital,
+            # Startup costs
+            "Startup Method":            startup_method,
+            "Startup Single Pct":        st.session_state.get("startup_single_pct", 8.0),
+            "Startup Op Training Days":  st.session_state.get("startup_op_training_days", 150.0),
+            "Startup Commerc Pct":       st.session_state.get("startup_commerc_pct", 5.0),
+            "Startup Inefficiency Pct":  st.session_state.get("startup_inefficiency_pct", 4.0),
+            "Startup Costs":             startup_costs,
+            # Total investment
+            "Additional Costs":          additional_costs,
+            "Total Investment":          total_investment,
+            # TIC accuracy
+            "TIC Lower Override":        st.session_state.get("tic_lower_override"),
+            "TIC Upper Override":        st.session_state.get("tic_upper_override"),
+            "TIC Lower Pct":             tic_lower_input,
+            "TIC Upper Pct":             tic_upper_input,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
