@@ -966,11 +966,12 @@ st.header("9. Fixed Costs")
 st.subheader("Labor Costs")
 
 def _overridable_number(label: str, ref_val: float, override_key: str,
-                        step: float = 0.01) -> float:
+                        step: float = 0.01, min_value: float | None = None) -> float:
     """
     Show a number_input pre-seeded from ref_val.
     Only highlights amber (⚠ overridden) when user has changed the value.
     No color when value matches the reference.
+    min_value defaults to None (no lower bound) to support negative values.
     """
     stored = st.session_state.get(override_key)
     current = stored if stored is not None else ref_val
@@ -994,7 +995,7 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
         st.session_state[ok] = v if abs(v - rk) > 1e-9 else None
 
     return st.number_input(
-        label, min_value=0.0, step=step,
+        label, min_value=min_value, step=step,
         value=float(current),
         key=f"w_{override_key}",
         label_visibility="collapsed",
@@ -1569,7 +1570,7 @@ with col1:
     else:
         tic_lower_input = _overridable_number(
             f"Lower bound (%)  [ref: {tic_lower_ref:.1f}%]",
-            tic_lower_ref, "tic_lower_override", step=0.5
+            tic_lower_ref, "tic_lower_override", step=0.5, min_value=None
         )
 
 with col2:
@@ -1581,8 +1582,26 @@ with col2:
     else:
         tic_upper_input = _overridable_number(
             f"Upper bound (%)  [ref: {tic_upper_ref:.1f}%]",
-            tic_upper_ref, "tic_upper_override", step=0.5
+            tic_upper_ref, "tic_upper_override", step=0.5, min_value=None
         )
+
+# TIC range results
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    if tic_lower_input is not None:
+        tic_lower_value = total_investment * (1.0 + tic_lower_input / 100.0)
+        _result_row("TIC lower bound (USD)", tic_lower_value, "tic_lower_usd",
+            f"TIC lower = Total investment × (1 + {tic_lower_input:.1f}%)")
+    else:
+        st.info("TIC lower bound: N/A")
+with col2:
+    if tic_upper_input is not None:
+        tic_upper_value = total_investment * (1.0 + tic_upper_input / 100.0)
+        _result_row("TIC upper bound (USD)", tic_upper_value, "tic_upper_usd",
+            f"TIC upper = Total investment × (1 + {tic_upper_input:.1f}%)")
+    else:
+        st.info("TIC upper bound: N/A")
 
 st.divider()
 if st.button("Save / Update Scenario", type="primary"):
