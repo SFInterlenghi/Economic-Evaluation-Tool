@@ -205,6 +205,59 @@ TIC_UPPER: dict[tuple[str, str], float | None] = {
     ("Theoretical (1 or 2)", "Medium"):  None,
     ("Theoretical (1 or 2)", "Low"):    100.0,
 }
+
+# Corporate tax rate by country
+TAXES_BY_COUNTRY: dict[str, float] = {
+    "Brazil": 0.340, "United States": 0.258, "Albania": 0.150, "Andorra": 0.100,
+    "Angola": 0.250, "Anguilla": 0.000, "Argentina": 0.300, "Armenia": 0.180,
+    "Aruba": 0.250, "Australia": 0.300, "Austria": 0.250, "Bahamas": 0.000,
+    "Bahrain": 0.000, "Barbados": 0.055, "Belgium": 0.250, "Belize": 0.000,
+    "Bermuda": 0.000, "Bosnia and Herzegovina": 0.100, "Botswana": 0.220,
+    "British Virgin Islands": 0.000, "Brunei Darussalam": 0.185, "Bulgaria": 0.100,
+    "Burkina Faso": 0.275, "Canada": 0.262, "Cayman Islands": 0.000, "Chile": 0.100,
+    "China (People's Republic of)": 0.250, "Colombia": 0.310, "Costa Rica": 0.300,
+    "Côte d'Ivoire": 0.250, "Croatia": 0.180, "Curacao": 0.220, "Czech Republic": 0.190,
+    "Democratic Republic of the Congo": 0.300, "Denmark": 0.220, "Dominica": 0.250,
+    "Egypt": 0.225, "Estonia": 0.200, "Eswatini": 0.275, "Faeroe Islands": 0.180,
+    "Finland": 0.200, "France": 0.284, "Gabon": 0.300, "Georgia": 0.150,
+    "Germany": 0.299, "Greece": 0.240, "Greenland": 0.265, "Grenada": 0.280,
+    "Guernsey": 0.000, "Hong Kong, China": 0.165, "Hungary": 0.090, "Iceland": 0.200,
+    "India": 0.252, "Indonesia": 0.220, "Ireland": 0.125, "Isle of Man": 0.000,
+    "Israel": 0.230, "Italy": 0.278, "Jamaica": 0.250, "Japan": 0.297,
+    "Jersey": 0.000, "Kenya": 0.300, "Korea": 0.275, "Latvia": 0.200,
+    "Liberia": 0.250, "Liechtenstein": 0.125, "Lithuania": 0.150, "Luxembourg": 0.249,
+    "Macau, China": 0.120, "Malaysia": 0.240, "Maldives": 0.150, "Malta": 0.350,
+    "Mauritius": 0.150, "Mexico": 0.300, "Monaco": 0.265, "Montserrat": 0.300,
+    "Namibia": 0.320, "Netherlands": 0.250, "New Zealand": 0.280, "Nigeria": 0.300,
+    "North Macedonia": 0.100, "Norway": 0.220, "Oman": 0.150, "Panama": 0.250,
+    "Paraguay": 0.100, "Peru": 0.295, "Poland": 0.190, "Portugal": 0.315,
+    "Romania": 0.160, "Russia": 0.200, "Saint Lucia": 0.300,
+    "Saint Vincent and the Grenadines": 0.300, "San Marino": 0.170,
+    "Saudi Arabia": 0.200, "Senegal": 0.300, "Serbia": 0.150, "Seychelles": 0.300,
+    "Singapore": 0.170, "Slovak Republic": 0.210, "Slovenia": 0.190,
+    "South Africa": 0.280, "Spain": 0.250, "Sweden": 0.206, "Switzerland": 0.197,
+    "Thailand": 0.200, "Türkiye": 0.250, "Turks and Caicos Islands": 0.000,
+    "United Arab Emirates": 0.000, "United Kingdom": 0.190, "Uruguay": 0.250,
+    "Vietnam": 0.200,
+}
+COUNTRY_LIST = sorted(TAXES_BY_COUNTRY.keys())
+
+# CAPEX distribution by EPC duration
+# Rows = execution year (1st … 10th), columns = total EPC duration in years (1 … 10)
+CAPEX_DISTRIBUTION = pd.DataFrame({
+    "1":  [1.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "2":  [0.60000, 0.40000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "3":  [0.30000, 0.50000, 0.20000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "4":  [0.40000, 0.30000, 0.20000, 0.10000, 0.00000, 0.00000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "5":  [0.30000, 0.20000, 0.20000, 0.20000, 0.10000, 0.00000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "6":  [0.30000, 0.20000, 0.20000, 0.20000, 0.05000, 0.05000, 0.00000, 0.00000, 0.00000,  0.000000],
+    "7":  [0.30000, 0.20000, 0.20000, 0.20000, 0.05000, 0.02500, 0.02500, 0.00000, 0.00000,  0.000000],
+    "8":  [0.30000, 0.20000, 0.20000, 0.20000, 0.05000, 0.02500, 0.01250, 0.01250, 0.00000,  0.000000],
+    "9":  [0.30000, 0.20000, 0.20000, 0.20000, 0.05000, 0.02500, 0.01250, 0.00625, 0.00625,  0.000000],
+    "10": [0.30000, 0.20000, 0.20000, 0.20000, 0.05000, 0.02500, 0.01250, 0.00625, 0.003125, 0.003125],
+}, index=["1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th"])
+CAPEX_DISTRIBUTION.index.name = "Execution Year"
+
 PLANT_COST_INDEX: dict[int, float] = {
     2000: 102.44, 2001: 102.32, 2002: 102.09, 2003: 106.35,
     2004: 119.36, 2005: 128.89, 2006: 135.32, 2007: 140.98,
@@ -329,6 +382,17 @@ DEFAULTS = {
     # TIC accuracy overrides
     "tic_lower_override":      None,
     "tic_upper_override":      None,
+    # Financial assumptions — Land
+    "land_option":             "Buy",
+    "land_buy_pct_override":   None,
+    "land_rent_pct_override":  None,
+    # Financial assumptions — Depreciation
+    "depreciation_method":     "Straight Line",
+    "depreciation_years":      10,
+    "residual_value_pct":      20.0,
+    # Financial assumptions — Taxes
+    "tax_country":             "Brazil",
+    "tax_rate_override":       None,
 }
 
 # ─────────────────────────────────────────────
@@ -578,6 +642,17 @@ def load_scenario_data():
         # TIC overrides
         "tic_lower_override":        ("TIC Lower Override",       None),
         "tic_upper_override":        ("TIC Upper Override",       None),
+        # Financial assumptions — Land
+        "land_option":               ("Land Option",              "Buy"),
+        "land_buy_pct_override":     ("Land Buy Pct Override",    None),
+        "land_rent_pct_override":    ("Land Rent Pct Override",   None),
+        # Financial assumptions — Depreciation
+        "depreciation_method":       ("Depreciation Method",      "Straight Line"),
+        "depreciation_years":        ("Depreciation Years",       10),
+        "residual_value_pct":        ("Residual Value Pct",       20.0),
+        # Financial assumptions — Taxes
+        "tax_country":               ("Tax Country",              "Brazil"),
+        "tax_rate_override":         ("Tax Rate Override",        None),
     }
 
     for ss_key, (data_key, default) in mapping.items():
@@ -1604,6 +1679,114 @@ with col2:
         st.info("TIC upper bound: N/A")
 
 st.divider()
+
+# ─────────────────────────────────────────────
+# 12. Financial Assumptions
+# ─────────────────────────────────────────────
+st.header("12. Financial Assumptions")
+
+# ── Land ──────────────────────────────────────
+st.subheader("Land")
+
+land_option = st.radio(
+    "Land option",
+    options=["Buy", "Rent"],
+    index=0 if st.session_state.land_option == "Buy" else 1,
+    horizontal=True,
+    key="land_option",
+)
+st.markdown("---")
+
+col1, col2 = st.columns(2)
+if land_option == "Buy":
+    with col1:
+        land_buy_pct = _overridable_number(
+            f"Land purchase factor (% of ISBL+OSBL)  [ref: 2.00%]",
+            2.0, "land_buy_pct_override", step=0.1
+        )
+    land_rent_pct = 0.0
+    with col2:
+        land_cost_usd = project_costs_isbl_osbl * (land_buy_pct / 100.0)
+        _result_row("Land cost (USD)", land_cost_usd, "land_cost_display",
+            "Land cost = (ISBL+OSBL costs) × Land purchase factor %")
+else:  # Rent
+    with col1:
+        land_rent_pct = _overridable_number(
+            f"Land rent factor (% of ISBL+OSBL per year)  [ref: 0.20%]",
+            0.2, "land_rent_pct_override", step=0.01
+        )
+    land_buy_pct = 0.0
+    with col2:
+        land_rent_annual_usd = project_costs_isbl_osbl * (land_rent_pct / 100.0)
+        _result_row("Annual land rent (USD/year)", land_rent_annual_usd, "land_rent_display",
+            "Annual land rent = (ISBL+OSBL costs) × Land rent factor %")
+
+st.divider()
+
+# ── Depreciation ──────────────────────────────
+st.subheader("Depreciation")
+
+depreciation_method = st.radio(
+    "Depreciation method",
+    options=["Straight Line", "MACRS"],
+    index=0 if st.session_state.depreciation_method == "Straight Line" else 1,
+    horizontal=True,
+    key="depreciation_method",
+)
+st.markdown("---")
+
+col1, col2 = st.columns(2)
+with col1:
+    depreciation_years = st.number_input(
+        "Depreciation period (years)",
+        min_value=1, step=1,
+        key="depreciation_years",
+        help="Number of years over which CAPEX is depreciated. Must be a positive integer.",
+    )
+with col2:
+    residual_value_pct = st.number_input(
+        "Residual value (% of CAPEX)",
+        min_value=0.0, max_value=99.9, step=1.0,
+        key="residual_value_pct",
+        help="Salvage/residual value at end of depreciation period, as % of Project CAPEX.",
+    )
+
+residual_value_usd = project_capex * (residual_value_pct / 100.0)
+depreciable_base   = project_capex - residual_value_usd
+
+col3, col4 = st.columns(2)
+with col3:
+    _result_row("Residual value (USD)", residual_value_usd, "residual_value_display",
+        "Residual value = Project CAPEX × Residual value %")
+with col4:
+    _result_row("Depreciable base (USD)", depreciable_base, "depreciable_base_display",
+        "Depreciable base = Project CAPEX − Residual value")
+
+st.divider()
+
+# ── Taxes ─────────────────────────────────────
+st.subheader("Taxes")
+
+col1, col2 = st.columns(2)
+with col1:
+    tax_country = st.selectbox(
+        "Country",
+        options=COUNTRY_LIST,
+        index=COUNTRY_LIST.index("Brazil"),
+        key="tax_country",
+    )
+tax_ref_pct = TAXES_BY_COUNTRY.get(tax_country, 0.34) * 100.0
+with col2:
+    tax_rate_input = _overridable_number(
+        f"Corporate tax rate (%)  [ref: {tax_ref_pct:.1f}% — {tax_country}]",
+        tax_ref_pct, "tax_rate_override", step=0.1
+    )
+tax_rate = tax_rate_input / 100.0
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# SAVE
 if st.button("Save / Update Scenario", type="primary"):
     if not st.session_state.sn_input:
         st.error("Please provide a Scenario Name before saving.")
@@ -1755,6 +1938,22 @@ if st.button("Save / Update Scenario", type="primary"):
             "TIC Upper Override":        st.session_state.get("tic_upper_override"),
             "TIC Lower Pct":             tic_lower_input,
             "TIC Upper Pct":             tic_upper_input,
+            # Financial assumptions — Land
+            "Land Option":               land_option,
+            "Land Buy Pct":              land_buy_pct,
+            "Land Rent Pct":             land_rent_pct,
+            "Land Buy Pct Override":     st.session_state.get("land_buy_pct_override"),
+            "Land Rent Pct Override":    st.session_state.get("land_rent_pct_override"),
+            # Financial assumptions — Depreciation
+            "Depreciation Method":       depreciation_method,
+            "Depreciation Years":        depreciation_years,
+            "Residual Value Pct":        residual_value_pct,
+            "Residual Value USD":        residual_value_usd,
+            "Depreciable Base":          depreciable_base,
+            # Financial assumptions — Taxes
+            "Tax Country":               tax_country,
+            "Tax Rate Override":         st.session_state.get("tax_rate_override"),
+            "Tax Rate":                  tax_rate,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
