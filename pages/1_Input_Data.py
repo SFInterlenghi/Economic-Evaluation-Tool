@@ -393,6 +393,40 @@ DEFAULTS = {
     # Financial assumptions — Taxes
     "tax_country":             "Brazil",
     "tax_rate_override":       None,
+    # Financial assumptions — Financial leverage
+    "financing_type":          "None",
+    "debt_ratio_pct":          50.0,
+    "amortization_years":      13,
+    "grace_period_years":      5,
+    # Financial assumptions — MARR
+    "central_bank_rate":       5.45,
+    "credit_spread":           2.94,
+    "unlevered_beta":          1.0,
+    "market_return":           8.63,
+    "risk_free_rate":          1.94,
+    "country_risk_premium":    3.63,
+    "us_cpi":                  2.46,
+    "country_cpi":             4.65,
+    "marr_override":           None,
+    # Project lifetime and CAPEX distribution
+    "epc_years":               3,
+    "project_lifetime":        20,
+    # Percentage of total capacity
+    "capacity_first_year":     100.0,
+    "capacity_intermediate":   100.0,
+    "capacity_last_year":      100.0,
+    # Percentage of fixed costs per year
+    "fixed_costs_first_year":  100.0,
+    "fixed_costs_intermediate":100.0,
+    "fixed_costs_last_year":   100.0,
+    # Market assumptions — annual growth rates
+    "growth_main_price":       0.0,
+    "growth_byproduct_price":  0.0,
+    "growth_raw_materials":    0.0,
+    "growth_chem_utilities":   0.0,
+    "growth_fixed_costs":      0.0,
+    # Other premises
+    "main_product_price":      None,
 }
 
 # ─────────────────────────────────────────────
@@ -653,10 +687,47 @@ def load_scenario_data():
         # Financial assumptions — Taxes
         "tax_country":               ("Tax Country",              "Brazil"),
         "tax_rate_override":         ("Tax Rate Override",        None),
+        # Financial leverage
+        "financing_type":            ("Financing Type",           "None"),
+        "debt_ratio_pct":            ("Debt Ratio Pct",           50.0),
+        "amortization_years":        ("Amortization Years",       13),
+        "grace_period_years":        ("Grace Period Years",       5),
+        # MARR
+        "central_bank_rate":         ("Central Bank Rate",        5.45),
+        "credit_spread":             ("Credit Spread",            2.94),
+        "unlevered_beta":            ("Unlevered Beta",           1.0),
+        "market_return":             ("Market Return",            8.63),
+        "risk_free_rate":            ("Risk Free Rate",           1.94),
+        "country_risk_premium":      ("Country Risk Premium",     3.63),
+        "us_cpi":                    ("US CPI",                   2.46),
+        "country_cpi":               ("Country CPI",              4.65),
+        "marr_override":             ("MARR Override",            None),
+        # Project lifetime
+        "epc_years":                 ("EPC Years",                3),
+        "project_lifetime":          ("Project Lifetime",         20),
+        # Capacity
+        "capacity_first_year":       ("Capacity First Year",      100.0),
+        "capacity_intermediate":     ("Capacity Intermediate",    100.0),
+        "capacity_last_year":        ("Capacity Last Year",       100.0),
+        # Fixed costs
+        "fixed_costs_first_year":    ("Fixed Costs First Year",   100.0),
+        "fixed_costs_intermediate":  ("Fixed Costs Intermediate", 100.0),
+        "fixed_costs_last_year":     ("Fixed Costs Last Year",    100.0),
+        # Market assumptions
+        "growth_main_price":         ("Growth Main Price",        0.0),
+        "growth_byproduct_price":    ("Growth Byproduct Price",   0.0),
+        "growth_raw_materials":      ("Growth Raw Materials",     0.0),
+        "growth_chem_utilities":     ("Growth Chem Utilities",    0.0),
+        "growth_fixed_costs":        ("Growth Fixed Costs",       0.0),
+        # Other premises — always reset to None so user sets fresh price per scenario
+        "main_product_price":        ("_reset_", None),
     }
 
     for ss_key, (data_key, default) in mapping.items():
-        st.session_state[ss_key] = data.get(data_key, default)
+        if data_key == "_reset_":
+            st.session_state[ss_key] = None   # always reset, never load from saved data
+        else:
+            st.session_state[ss_key] = data.get(data_key, default)
 
     st.session_state.table_key += 1
     st.session_state.lang_seeded_acq = None  # force re-seed on next render
@@ -1767,13 +1838,20 @@ st.divider()
 # ── Taxes ─────────────────────────────────────
 st.subheader("Taxes")
 
+def _on_country_change():
+    """Clear the tax rate override whenever the country selection changes."""
+    st.session_state.tax_rate_override = None
+    # Also clear the widget key so _overridable_number re-seeds from new ref
+    st.session_state.pop("w_tax_rate_override", None)
+
 col1, col2 = st.columns(2)
 with col1:
     tax_country = st.selectbox(
         "Country",
         options=COUNTRY_LIST,
-        index=COUNTRY_LIST.index("Brazil"),
+        index=COUNTRY_LIST.index(st.session_state.get("tax_country", "Brazil")),
         key="tax_country",
+        on_change=_on_country_change,
     )
 tax_ref_pct = TAXES_BY_COUNTRY.get(tax_country, 0.34) * 100.0
 with col2:
@@ -1782,6 +1860,303 @@ with col2:
         tax_ref_pct, "tax_rate_override", step=0.1
     )
 tax_rate = tax_rate_input / 100.0
+
+st.divider()
+
+# ── Financial Leverage ────────────────────────
+st.subheader("Financial Leverage")
+
+financing_type = st.radio(
+    "Financing type",
+    options=["None", "Straight Line"],
+    index=0 if st.session_state.financing_type == "None" else 1,
+    horizontal=True,
+    key="financing_type",
+)
+st.markdown("---")
+
+is_leveraged = financing_type == "Straight Line"
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    debt_ratio_pct = st.number_input(
+        "Debt ratio (% of CAPEX)",
+        min_value=0.0, max_value=99.9, step=1.0,
+        key="debt_ratio_pct",
+        disabled=not is_leveraged,
+        help="Proportion of CAPEX financed by debt.",
+    )
+with col2:
+    amortization_years = st.number_input(
+        "Amortization period (years)",
+        min_value=1, step=1,
+        key="amortization_years",
+        disabled=not is_leveraged,
+    )
+with col3:
+    grace_period_years = st.number_input(
+        "Grace period (years)",
+        min_value=0, step=1,
+        key="grace_period_years",
+        disabled=not is_leveraged,
+        help="Number of years before principal repayment begins.",
+    )
+
+debt_ratio = (debt_ratio_pct / 100.0) if is_leveraged else 0.0
+
+st.divider()
+
+# ── MARR ──────────────────────────────────────
+st.subheader("Minimum Acceptable Rate of Return (MARR)")
+
+col1, col2 = st.columns(2)
+with col1:
+    central_bank_rate = st.number_input(
+        "Central bank interest rate (%)",
+        min_value=0.0, step=0.01,
+        key="central_bank_rate",
+    )
+with col2:
+    credit_spread = st.number_input(
+        "Credit spread (%)",
+        min_value=0.0, step=0.01,
+        key="credit_spread",
+    )
+
+# COD = (central_bank_rate + credit_spread) × (1 − tax_rate)
+cod = (central_bank_rate + credit_spread) / 100.0 * (1.0 - tax_rate)
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    _result_row("Cost of Debt — COD (%)", cod * 100.0, "cod_display",
+        "COD = (Central bank rate + Credit spread) × (1 − Corporate tax rate)")
+st.markdown("---")
+
+col1, col2 = st.columns(2)
+with col1:
+    unlevered_beta = st.number_input(
+        "Unlevered / Asset beta",
+        min_value=0.0, step=0.01,
+        key="unlevered_beta",
+    )
+
+# Levered beta = unlevered_beta × (1 + (1 − tax) × debt_ratio / (1 − debt_ratio))
+# debt_ratio is 0 when financing_type is None
+_leverage_factor = (1.0 - tax_rate) * debt_ratio / (1.0 - debt_ratio) if debt_ratio < 1.0 else 0.0
+levered_beta = unlevered_beta * (1.0 + _leverage_factor)
+
+with col2:
+    _result_row("Levered / Equity beta", levered_beta, "levered_beta_display",
+        "Levered beta = Unlevered beta × (1 + (1−tax) × debt_ratio / (1−debt_ratio))"
+        "  |  debt_ratio = 0 when financing type is None")
+
+st.markdown("---")
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    market_return = st.number_input(
+        "Market return — rM (%)",
+        min_value=0.0, step=0.01,
+        key="market_return",
+    )
+with col2:
+    risk_free_rate = st.number_input(
+        "Risk-free rate of return (%)",
+        min_value=0.0, step=0.01,
+        key="risk_free_rate",
+    )
+
+# Market risk premium = levered_beta × (rM − risk_free_rate)
+market_risk_premium = levered_beta * (market_return - risk_free_rate) / 100.0
+
+with col3:
+    _result_row("Market risk premium — PRM (%)", market_risk_premium * 100.0,
+        "mrp_display",
+        "PRM = Levered beta × (Market return − Risk-free rate)")
+with col4:
+    country_risk_premium = st.number_input(
+        "Country risk premium — PRP (%)",
+        min_value=0.0, step=0.01,
+        key="country_risk_premium",
+    )
+
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    us_cpi = st.number_input(
+        "U.S. Consumer Price Index (%)",
+        min_value=0.0, step=0.01,
+        key="us_cpi",
+    )
+with col2:
+    country_cpi = st.number_input(
+        "Country Consumer Price Index (%)",
+        min_value=0.0, step=0.01,
+        key="country_cpi",
+    )
+
+# COE = ((1+rfr)*(1+country_cpi)/(1+us_cpi) − 1) + market_risk_premium + country_risk_premium
+_rfr   = risk_free_rate  / 100.0
+_ccpi  = country_cpi     / 100.0
+_uscpi = us_cpi          / 100.0
+coe = ((1.0 + _rfr) * (1.0 + _ccpi) / (1.0 + _uscpi) - 1.0) + market_risk_premium + country_risk_premium / 100.0
+
+st.markdown("---")
+_result_row("Cost of Equity — COE (%)", coe * 100.0, "coe_display",
+    "COE = ((1+rfr)×(1+country_CPI)/(1+US_CPI) − 1) + Market risk premium + Country risk premium")
+
+# MARR — formula default, user-editable
+_marr_formula = (debt_ratio * cod + (1.0 - debt_ratio) * coe) if is_leveraged else coe
+_marr_ref_pct = _marr_formula * 100.0
+
+st.markdown("---")
+col1, col2 = st.columns(2)
+with col1:
+    marr_input = _overridable_number(
+        f"MARR — Minimum Acceptable Rate of Return (%)",
+        _marr_ref_pct, "marr_override", step=0.01, min_value=None
+    )
+marr = marr_input / 100.0
+
+with col2:
+    st.markdown(
+        '<p style="font-size:0.82rem;color:#555;margin-top:28px;">'
+        + ("COE  (financing type: None)" if not is_leveraged
+           else f"debt_ratio×COD + (1−debt_ratio)×COE  |  {debt_ratio_pct:.1f}%×{cod*100:.2f}% + {100-debt_ratio_pct:.1f}%×{coe*100:.2f}%")
+        + "</p>", unsafe_allow_html=True
+    )
+
+st.divider()
+
+# ─────────────────────────────────────────────
+# 13. Project Lifetime and CAPEX Distribution
+# ─────────────────────────────────────────────
+st.header("13. Project Lifetime and CAPEX Distribution")
+
+col1, col2, col3 = st.columns(3)
+with col1:
+    epc_years = st.number_input(
+        "EPC time (years)",
+        min_value=1, max_value=10, step=1,
+        key="epc_years",
+        help="Engineering, Procurement and Construction duration. Must be between 1 and 10.",
+    )
+with col2:
+    project_lifetime = st.number_input(
+        "Project lifetime (years)",
+        min_value=1, max_value=40, step=1,
+        key="project_lifetime",
+    )
+with col3:
+    total_project_lifetime = epc_years + project_lifetime
+    _result_row("Total project lifetime (years)", float(total_project_lifetime),
+        "total_lifetime_display",
+        "Total project lifetime = EPC time + Project lifetime")
+
+st.markdown("---")
+
+# CAPEX distribution table — read from reference, display as editable-looking table
+_capex_col = str(epc_years)
+_capex_dist = CAPEX_DISTRIBUTION[_capex_col]   # Series indexed 1st…10th
+
+_year_labels = ["1st year (%)","2nd year (%)","3rd year (%)","4th year (%)",
+                "5th year (%)","6th year (%)","7th year (%)","8th year (%)",
+                "9th year (%)","10th year (%)"]
+_capex_df = pd.DataFrame({
+    "Year":               _year_labels,
+    "CAPEX Distribution": [f"{v*100:.4f}%" for v in _capex_dist.values],
+})
+st.dataframe(_capex_df, use_container_width=False, hide_index=True,
+             column_config={"Year": st.column_config.TextColumn(width="medium"),
+                            "CAPEX Distribution": st.column_config.TextColumn(width="small")})
+
+st.divider()
+
+# ── Percentage of Total Capacity ──────────────
+st.subheader("Percentage of Total Capacity per Year")
+col1, col2, col3 = st.columns(3)
+with col1:
+    capacity_first_year = st.number_input(
+        "First year (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="capacity_first_year",
+    )
+with col2:
+    capacity_intermediate = st.number_input(
+        "Intermediate years (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="capacity_intermediate",
+    )
+with col3:
+    capacity_last_year = st.number_input(
+        "Last year (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="capacity_last_year",
+    )
+
+st.divider()
+
+# ── Percentage of Fixed Costs per Year ─────────
+st.subheader("Percentage of Fixed Costs per Year")
+col1, col2, col3 = st.columns(3)
+with col1:
+    fixed_costs_first_year = st.number_input(
+        "First year (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="fixed_costs_first_year",
+    )
+with col2:
+    fixed_costs_intermediate = st.number_input(
+        "Intermediate years (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="fixed_costs_intermediate",
+    )
+with col3:
+    fixed_costs_last_year = st.number_input(
+        "Last year (%)", min_value=0.0, max_value=100.0, step=1.0,
+        key="fixed_costs_last_year",
+    )
+
+st.divider()
+
+# ── Market Assumptions ─────────────────────────
+st.subheader("Market Assumptions — Annual Growth Rates")
+st.caption("Enter the expected annual % change for each cost/price category.")
+
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
+    growth_main_price = st.number_input(
+        "Main product price (% / year)",
+        step=0.1, key="growth_main_price",
+    )
+with col2:
+    growth_byproduct_price = st.number_input(
+        "Byproduct prices (% / year)",
+        step=0.1, key="growth_byproduct_price",
+    )
+with col3:
+    growth_raw_materials = st.number_input(
+        "Raw materials costs (% / year)",
+        step=0.1, key="growth_raw_materials",
+    )
+with col4:
+    growth_chem_utilities = st.number_input(
+        "Chemical inputs & utilities costs (% / year)",
+        step=0.1, key="growth_chem_utilities",
+    )
+with col5:
+    growth_fixed_costs = st.number_input(
+        "Fixed costs (% / year)",
+        step=0.1, key="growth_fixed_costs",
+    )
+
+st.divider()
+
+# ── Other Premises ─────────────────────────────
+st.subheader("Other Premises")
+col1, col2 = st.columns(2)
+with col1:
+    main_product_price = st.number_input(
+        f"Main product selling price (USD / {st.session_state.pu_input})",
+        min_value=0.0, step=0.01,
+        value=st.session_state.main_product_price if st.session_state.main_product_price is not None else 0.0,
+        key="main_product_price",
+        help="Selling price per unit of the main product. Reset to 0 when a new scenario is loaded.",
+    )
 
 st.divider()
 
@@ -1954,6 +2329,47 @@ if st.button("Save / Update Scenario", type="primary"):
             "Tax Country":               tax_country,
             "Tax Rate Override":         st.session_state.get("tax_rate_override"),
             "Tax Rate":                  tax_rate,
+            # Financial leverage
+            "Financing Type":            financing_type,
+            "Debt Ratio Pct":            debt_ratio_pct,
+            "Debt Ratio":                debt_ratio,
+            "Amortization Years":        amortization_years,
+            "Grace Period Years":        grace_period_years,
+            # MARR
+            "Central Bank Rate":         central_bank_rate,
+            "Credit Spread":             credit_spread,
+            "COD":                       cod,
+            "Unlevered Beta":            unlevered_beta,
+            "Levered Beta":              levered_beta,
+            "Market Return":             market_return,
+            "Risk Free Rate":            risk_free_rate,
+            "Market Risk Premium":       market_risk_premium,
+            "Country Risk Premium":      country_risk_premium,
+            "US CPI":                    us_cpi,
+            "Country CPI":               country_cpi,
+            "COE":                       coe,
+            "MARR Override":             st.session_state.get("marr_override"),
+            "MARR":                      marr,
+            # Project lifetime
+            "EPC Years":                 epc_years,
+            "Project Lifetime":          project_lifetime,
+            "Total Project Lifetime":    total_project_lifetime,
+            # Capacity
+            "Capacity First Year":       capacity_first_year,
+            "Capacity Intermediate":     capacity_intermediate,
+            "Capacity Last Year":        capacity_last_year,
+            # Fixed costs per year
+            "Fixed Costs First Year":    fixed_costs_first_year,
+            "Fixed Costs Intermediate":  fixed_costs_intermediate,
+            "Fixed Costs Last Year":     fixed_costs_last_year,
+            # Market assumptions
+            "Growth Main Price":         growth_main_price,
+            "Growth Byproduct Price":    growth_byproduct_price,
+            "Growth Raw Materials":      growth_raw_materials,
+            "Growth Chem Utilities":     growth_chem_utilities,
+            "Growth Fixed Costs":        growth_fixed_costs,
+            # Other premises
+            "Main Product Price":        main_product_price,
         }
 
         st.session_state.success_msg      = f"Scenario '{st.session_state.sn_input}' successfully saved!"
