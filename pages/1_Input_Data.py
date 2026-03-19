@@ -101,9 +101,9 @@ MAINTENANCE_REPAIRS: dict[tuple[str,str], float] = {
 
 # Operating supplies (% of Maintenance) keyed by process_severity
 OPERATING_SUPPLIES: dict[str, float] = {
-    "High":   0.20,
-    "Medium": 0.15,
-    "Low":    0.10,
+    "High":   0.0020,
+    "Medium": 0.0015,
+    "Low":    0.0010,
 }
 
 # Administrative overhead (% of OLC) keyed by product_type
@@ -1010,16 +1010,34 @@ st.divider()
 
 # 5. Decision Making Assistant
 st.header("5. Decision Making Assistant")
+
+# Override keys derived from DMA selections — cleared when any DMA choice changes
+# so that _overridable_number re-seeds from the new reference value
+_DMA_DERIVED_OVERRIDES = [
+    "op_supplies_override", "maint_repair_override",
+    "admin_overhead_override", "mfg_overhead_override", "taxes_ins_override",
+    "patents_roy_override", "lab_charges_override", "office_labor_override",
+    "admin_costs_override", "mfg_costs_override",
+    "dist_selling_override", "r_and_d_override",
+    "tic_lower_override", "tic_upper_override",
+]
+
+def _on_dma_change():
+    """Clear all reference-table override values and their widget keys when DMA changes."""
+    for ok in _DMA_DERIVED_OVERRIDES:
+        st.session_state[ok] = None
+        st.session_state.pop(f"w_{ok}", None)
+
 col_dm1, col_dm2, col_dm3 = st.columns(3)
 with col_dm1:
-    st.selectbox("Type of main product",      PRODUCT_TYPES,    key="dm_prod_type")
-    st.selectbox("Availability of information", INFO_OPTIONS,    key="dm_info_avail")
+    st.selectbox("Type of main product",        PRODUCT_TYPES,    key="dm_prod_type", on_change=_on_dma_change)
+    st.selectbox("Availability of information", INFO_OPTIONS,     key="dm_info_avail", on_change=_on_dma_change)
 with col_dm2:
-    st.selectbox("TRL",                       TRL_OPTIONS,      key="dm_trl")
-    st.selectbox("Process severity",          SEVERITY_OPTIONS, key="dm_severity")
+    st.selectbox("TRL",                         TRL_OPTIONS,      key="dm_trl",       on_change=_on_dma_change)
+    st.selectbox("Process severity",            SEVERITY_OPTIONS, key="dm_severity",  on_change=_on_dma_change)
 with col_dm3:
-    st.selectbox("Type of material handled",  MAT_OPTIONS,      key="dm_mat_type")
-    st.selectbox("Plant size",                SIZE_OPTIONS,     key="dm_plant_size")
+    st.selectbox("Type of material handled",    MAT_OPTIONS,      key="dm_mat_type",  on_change=_on_dma_change)
+    st.selectbox("Plant size",                  SIZE_OPTIONS,     key="dm_plant_size")
 st.divider()
 
 # 7. Project CAPEX
@@ -1716,22 +1734,6 @@ _result_row("Total fixed costs (USD/year)", total_fixed_costs, "tfc_display",
     "Total fixed costs = Direct fixed costs + Indirect fixed costs")
 
 st.divider()
-
-# OPEX component breakdown for validation
-with st.expander("OPEX breakdown", expanded=False):
-    st.markdown(f"""
-| Component | Value |
-|---|---|
-| Total variable costs (TVC) | {fmt_curr(direct_var_costs)} |
-| Total labor costs | {fmt_curr(total_labor_costs)} |
-| Supply & maintenance | {fmt_curr(supply_maint_costs)} |
-| Additional fixed costs (AFC) | {fmt_curr(afc)} |
-| Indirect fixed costs (IFC) | {fmt_curr(indirect_fixed_costs)} |
-| OPEX numerator | {fmt_curr(_numerator)} |
-| OPEX denominator (1 − patents − dist − R&D) | {_denominator:.6f} |
-| **Total OPEX = numerator / denominator** | **{fmt_curr(total_opex)}** |
-| *(check: TVC + DFC + IFC)* | *{fmt_curr(direct_var_costs + direct_fixed_costs + indirect_fixed_costs)}* |
-""")
 
 _result_row("Total OPEX (USD/year)", total_opex, "total_opex_display",
     "OPEX = (TVC + Labor + Supply + (admin_ov+adm_costs)×OLC + (mfg_ov+taxes+mfg_costs)×CAPEX) / (1 − patents − dist_sell − R&D)")
