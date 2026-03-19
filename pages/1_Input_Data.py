@@ -1693,6 +1693,10 @@ indirect_fixed_costs = (admin_costs_pct * olc
 direct_fixed_costs = total_labor_costs + supply_maint_costs + afc
 total_fixed_costs  = direct_fixed_costs + indirect_fixed_costs
 
+# Total OPEX = the analytically solved value (algebraically equal to TVC + DFC + IFC)
+# Using opex directly avoids any floating-point divergence
+total_opex = opex
+
 # ── Step-by-step Indirect Fixed Costs breakdown ──────────────────────────
 
 st.markdown("---")
@@ -1713,9 +1717,24 @@ _result_row("Total fixed costs (USD/year)", total_fixed_costs, "tfc_display",
 
 st.divider()
 
-total_opex = direct_var_costs + direct_fixed_costs + indirect_fixed_costs
+# OPEX component breakdown for validation
+with st.expander("OPEX breakdown", expanded=False):
+    st.markdown(f"""
+| Component | Value |
+|---|---|
+| Total variable costs (TVC) | {fmt_curr(direct_var_costs)} |
+| Total labor costs | {fmt_curr(total_labor_costs)} |
+| Supply & maintenance | {fmt_curr(supply_maint_costs)} |
+| Additional fixed costs (AFC) | {fmt_curr(afc)} |
+| Indirect fixed costs (IFC) | {fmt_curr(indirect_fixed_costs)} |
+| OPEX numerator | {fmt_curr(_numerator)} |
+| OPEX denominator (1 − patents − dist − R&D) | {_denominator:.6f} |
+| **Total OPEX = numerator / denominator** | **{fmt_curr(total_opex)}** |
+| *(check: TVC + DFC + IFC)* | *{fmt_curr(direct_var_costs + direct_fixed_costs + indirect_fixed_costs)}* |
+""")
+
 _result_row("Total OPEX (USD/year)", total_opex, "total_opex_display",
-    "Total OPEX = Total variable costs (TVC) + Direct fixed costs + Indirect fixed costs")
+    "OPEX = (TVC + Labor + Supply + (admin_ov+adm_costs)×OLC + (mfg_ov+taxes+mfg_costs)×CAPEX) / (1 − patents − dist_sell − R&D)")
 
 st.divider()
 
