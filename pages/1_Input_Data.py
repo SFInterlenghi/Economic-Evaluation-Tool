@@ -329,6 +329,10 @@ DEFAULTS = {
     # Lang override support
     "allow_override":       False,   # master switch for manual editing of Lang fields
     "lang_seeded_acq":      None,    # equip_acq value used for last Lang seed
+    # Aspen PEA import tracking
+    "pea_last_fingerprint": "",
+    "pea_last_parsed":      None,
+    "pea_fmt":              "",
     # CAPEX calculations
     "databank_year":   2022,
     "analysis_year":   PCI_YEARS[-1],
@@ -920,22 +924,26 @@ if _eq_is_pea or _oth_is_pea:
         ipewb_file = st.file_uploader(
             "IPEWB file (.xlsx)", type=["xlsx"],
             key="ipewb_uploader",
-            disabled=not _eq_is_pea,
             help="Required when Equipment costs source = Aspen PEA.",
         ) if _eq_is_pea else None
     with col_up2:
         reports_file = st.file_uploader(
             "Reports file (.xlsm / .xlsx)", type=["xlsm", "xlsx"],
             key="reports_uploader",
-            disabled=not _oth_is_pea,
             help="Required when Other Costs source = Aspen PEA.",
         ) if _oth_is_pea else None
 
-    # Parse on upload — only runs when a new file is present
-    _ipewb_bytes   = ipewb_file.read()   if ipewb_file   else None
-    _reports_bytes = reports_file.read() if reports_file else None
+    # Build a fingerprint of the currently uploaded files (name + size)
+    # Only re-parse when this changes — prevents infinite rerun loops
+    _ipewb_fp   = f"{ipewb_file.name}:{ipewb_file.size}"   if ipewb_file   else ""
+    _reports_fp = f"{reports_file.name}:{reports_file.size}" if reports_file else ""
+    _current_fp = f"{_ipewb_fp}|{_reports_fp}"
+    _last_fp    = st.session_state.get("pea_last_fingerprint", "")
 
-    if _ipewb_bytes or _reports_bytes:
+    if _current_fp != _last_fp and (_ipewb_fp or _reports_fp):
+        _ipewb_bytes   = ipewb_file.read()   if ipewb_file   else None
+        _reports_bytes = reports_file.read() if reports_file else None
+
         with st.spinner("Reading Aspen PEA files…"):
             _parsed = parse_aspen_pea(
                 _ipewb_bytes, _reports_bytes,
@@ -943,27 +951,58 @@ if _eq_is_pea or _oth_is_pea:
                 import_other=_oth_is_pea,
             )
 
-        # Report errors first
-        _errs = [v for k, v in _parsed.items() if k.startswith("_") and k.endswith("_error")]
+        _errs = {k: v for k, v in _parsed.items() if k.startswith("_") and k.endswith("_error")}
         if _errs:
-            for e in _errs:
+            for e in _errs.values():
                 st.error(f"Import error: {e}")
         else:
-            # Write all extracted values into session state as new defaults
-            _skipped = ("_ipewb_error", "_reports_error")
-            _count = 0
+            # Write values into session state — widgets below will pick them up this run
+            _skip = {"fmt", "_ipewb_error", "_reports_error"}
             for k, v in _parsed.items():
-                if k not in _skipped:
+                if k not in _skip:
                     st.session_state[k] = v
-                    _count += 1
-            # Force widget re-seed for Lang override if active
-            if st.session_state.get("allow_override"):
-                _seed_override_values()
-            st.success(
-                f"✓ Aspen PEA import complete — {_count} field(s) populated. "
-                "Values are pre-filled below and can be adjusted."
-            )
-            st.rerun()
+            # Store fingerprint so we don't reparse on next natural rerun
+            st.session_state["pea_last_fingerprint"] = _current_fp
+            # Store summary for display
+            st.session_state["pea_last_parsed"] = {k: v for k, v in _parsed.items() if k not in _skip}
+            st.session_state["pea_fmt"] = _parsed.get("fmt", "unknown")
+
+    # Always show the summary table if we have parsed results for this upload
+    if st.session_state.get("pea_last_parsed") and _current_fp == st.session_state.get("pea_last_fingerprint", ""):
+        _p = st.session_state["pea_last_parsed"]
+        _fmt_label = {"legacy": "Legacy (Equipment sheet)", "new": "New (Equipment Summary sheet)"}.get(
+            st.session_state.get("pea_fmt", ""), "Unknown")
+
+        st.success(f"✓ Aspen PEA import complete — format detected: **{_fmt_label}**")
+
+        _label_map = {
+            "equip_acq":       "Equipment Acquisition ($)",
+            "equip_setting":   "Equipment Setting ($)",
+            "spare_parts":     "Spare Parts ($)",
+            "n_operators":     "Operators per shift",
+            "n_supervisors":   "Supervisors per shift",
+            "epc_years":       "EPC time (years)",
+            "piping":          "Piping ($)",
+            "civil":           "Civil ($)",
+            "steel":           "Steel ($)",
+            "instrumentals":   "Instrumentals ($)",
+            "electrical":      "Electrical ($)",
+            "insulation":      "Insulation ($)",
+            "paint":           "Paint ($)",
+            "field_office":    "Field Office Staff ($)",
+            "const_indirects": "Construction Indirects ($)",
+            "freight":         "Freight ($)",
+            "taxes_permits":   "Taxes and Permits ($)",
+            "eng_ho":          "Engineering and HO ($)",
+            "ga_overheads":    "GA Overheads ($)",
+            "contract_fee":    "Contract Fee ($)",
+        }
+        _rows = []
+        for k, v in _p.items():
+            lbl = _label_map.get(k, k)
+            disp = f"${v:,.2f}" if isinstance(v, float) else str(v)
+            _rows.append({"Field": lbl, "Imported Value": disp})
+        st.dataframe(pd.DataFrame(_rows), use_container_width=False, hide_index=True)
 
 st.divider()
 
