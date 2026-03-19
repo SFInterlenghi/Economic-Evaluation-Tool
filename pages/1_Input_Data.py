@@ -308,24 +308,24 @@ DEFAULTS = {
     "dm_mat_type":     "Fluids",
     "dm_plant_size":   "Medium",
     # CAPEX
-    "equip_acq":       0.0,
-    "spare_parts":     0.0,
-    "equip_setting":   0.0,
-    "piping":          0.0,
-    "civil":           0.0,
-    "steel":           0.0,
-    "instrumentals":   0.0,
-    "electrical":      0.0,
-    "insulation":      0.0,
-    "paint":           0.0,
-    "isbl_contrib":    100.0,
-    "field_office":    0.0,
-    "const_indirects": 0.0,
-    "freight":         0.0,
-    "taxes_permits":   0.0,
-    "eng_ho":          0.0,
-    "ga_overheads":    0.0,
-    "contract_fee":    0.0,
+    "equip_acq":         0.0,
+    "spare_parts":       0.0,
+    "equipment_setting": 0.0,
+    "piping":            0.0,
+    "civil":             0.0,
+    "steel":             0.0,
+    "instrumentals":     0.0,
+    "electrical":        0.0,
+    "insulation":        0.0,
+    "paint":             0.0,
+    "isbl_contrib":      100.0,
+    "field_office_staff":     0.0,
+    "construction_indirects": 0.0,
+    "freight":           0.0,
+    "taxes_and_permits": 0.0,
+    "engineering_and_ho":0.0,
+    "ga_overheads":      0.0,
+    "contract_fee":      0.0,
     # Lang override support
     "allow_override":       False,   # master switch for manual editing of Lang fields
     "lang_seeded_acq":      None,    # equip_acq value used for last Lang seed
@@ -493,18 +493,15 @@ def parse_aspen_pea(ipewb_bytes: bytes | None, reports_bytes: bytes | None,
                 result["equip_acq"] = float(equip_acq)
 
                 ws_ps = wb["Project Summary"]
-                # Operators: C146, Supervisors: C155
                 ops = ws_ps.cell(row=146, column=3).value
                 sups = ws_ps.cell(row=155, column=3).value
-                # EPC: C49 (weeks) → round(weeks*7/365)
                 epc_weeks = ws_ps.cell(row=49, column=3).value
                 if epc_weeks:
                     result["epc_years"] = max(1, round(epc_weeks * 7 / 365))
                 if import_other:
-                    # Equipment setting: C102
                     eq_set = ws_ps.cell(row=102, column=3).value
                     if isinstance(eq_set, (int, float)):
-                        result["equip_setting"] = float(eq_set)
+                        result["equipment_setting"] = float(eq_set)
 
             elif fmt == "legacy":
                 # Equipment acquisition: sum col E of Equipment
@@ -516,18 +513,15 @@ def parse_aspen_pea(ipewb_bytes: bytes | None, reports_bytes: bytes | None,
                 result["equip_acq"] = float(equip_acq)
 
                 ws_ps = wb["Project Summary"]
-                # Operators: C225, Supervisors: C234
                 ops  = ws_ps.cell(row=225, column=3).value
                 sups = ws_ps.cell(row=234, column=3).value
-                # EPC: C62 (weeks) → round(weeks*7/365)
                 epc_weeks = ws_ps.cell(row=62, column=3).value
                 if epc_weeks:
                     result["epc_years"] = max(1, round(epc_weeks * 7 / 365))
                 if import_other:
-                    # Equipment setting: C173
                     eq_set = ws_ps.cell(row=173, column=3).value
                     if isinstance(eq_set, (int, float)):
-                        result["equip_setting"] = float(eq_set)
+                        result["equipment_setting"] = float(eq_set)
 
             if fmt in ("new", "legacy"):
                 if isinstance(ops, (int, float)):
@@ -554,24 +548,25 @@ def parse_aspen_pea(ipewb_bytes: bytes | None, reports_bytes: bytes | None,
             result["spare_parts"] = max(0.0, reports_total_equip - ipewb_equip_acq)
 
             # Installation costs — col F
-            result["piping"]        = _v(9,  6)
-            result["civil"]         = _v(10, 6)
-            result["steel"]         = _v(11, 6)
-            result["instrumentals"] = _v(12, 6)
-            result["electrical"]    = _v(13, 6)
-            result["insulation"]    = _v(14, 6)
-            result["paint"]         = _v(15, 6)
+            result["piping"]           = _v(9,  6)
+            result["civil"]            = _v(10, 6)
+            result["steel"]            = _v(11, 6)
+            result["instrumentals"]    = _v(12, 6)
+            result["electrical"]       = _v(13, 6)
+            result["insulation"]       = _v(14, 6)
+            result["paint"]            = _v(15, 6)
 
             # Indirect field costs — col M
-            result["field_office"]    = _v(7,  13)
-            result["const_indirects"] = _v(18, 13)
+            # Keys must match lang_or_manual ss_key = field.lower().replace(" ", "_")
+            result["field_office_staff"]       = _v(7,  13)
+            result["construction_indirects"]   = _v(18, 13)
 
             # Non-field costs — col R
-            result["freight"]       = _v(6,  18)
-            result["taxes_permits"] = _v(10, 18)
-            result["eng_ho"]        = _v(16, 18) + _v(19, 18)
-            result["ga_overheads"]  = _v(20, 18)
-            result["contract_fee"]  = _v(21, 18)
+            result["freight"]              = _v(6,  18)
+            result["taxes_and_permits"]    = _v(10, 18)
+            result["engineering_and_ho"]   = _v(16, 18) + _v(19, 18)
+            result["ga_overheads"]         = _v(20, 18)
+            result["contract_fee"]         = _v(21, 18)
 
         except Exception as e:
             result["_reports_error"] = str(e)
@@ -736,7 +731,7 @@ def load_scenario_data():
         "dm_plant_size":   ("Plant Size",              "Medium"),
         "equip_acq":       ("Equipment Acquisition",   0.0),
         "spare_parts":     ("Spare Parts",             0.0),
-        "equip_setting":   ("Equipment Setting",       0.0),
+        "equipment_setting": ("Equipment Setting",     0.0),
         "piping":          ("Piping",                  0.0),
         "civil":           ("Civil",                   0.0),
         "steel":           ("Steel",                   0.0),
@@ -745,11 +740,11 @@ def load_scenario_data():
         "insulation":      ("Insulation",              0.0),
         "paint":           ("Paint",                   0.0),
         "isbl_contrib":    ("ISBL Contribution (%)",   100.0),
-        "field_office":    ("Field Office Staff",      0.0),
-        "const_indirects": ("Construction Indirects",  0.0),
+        "field_office_staff":      ("Field Office Staff",      0.0),
+        "construction_indirects":  ("Construction Indirects",  0.0),
         "freight":         ("Freight",                 0.0),
-        "taxes_permits":   ("Taxes and Permits",       0.0),
-        "eng_ho":          ("Engineering and HO",      0.0),
+        "taxes_and_permits": ("Taxes and Permits",     0.0),
+        "engineering_and_ho": ("Engineering and HO",  0.0),
         "ga_overheads":    ("GA Overheads",            0.0),
         "contract_fee":    ("Contract Fee",            0.0),
         "allow_override":  ("Allow Override",          False),
@@ -976,31 +971,38 @@ if _eq_is_pea or _oth_is_pea:
         st.success(f"✓ Aspen PEA import complete — format detected: **{_fmt_label}**")
 
         _label_map = {
-            "equip_acq":       "Equipment Acquisition ($)",
-            "equip_setting":   "Equipment Setting ($)",
-            "spare_parts":     "Spare Parts ($)",
-            "n_operators":     "Operators per shift",
-            "n_supervisors":   "Supervisors per shift",
-            "epc_years":       "EPC time (years)",
-            "piping":          "Piping ($)",
-            "civil":           "Civil ($)",
-            "steel":           "Steel ($)",
-            "instrumentals":   "Instrumentals ($)",
-            "electrical":      "Electrical ($)",
-            "insulation":      "Insulation ($)",
-            "paint":           "Paint ($)",
-            "field_office":    "Field Office Staff ($)",
-            "const_indirects": "Construction Indirects ($)",
-            "freight":         "Freight ($)",
-            "taxes_permits":   "Taxes and Permits ($)",
-            "eng_ho":          "Engineering and HO ($)",
-            "ga_overheads":    "GA Overheads ($)",
-            "contract_fee":    "Contract Fee ($)",
+            "equip_acq":             "Equipment Acquisition ($)",
+            "equipment_setting":     "Equipment Setting ($)",
+            "spare_parts":           "Spare Parts ($)",
+            "n_operators":           "Operators per shift",
+            "n_supervisors":         "Supervisors per shift",
+            "epc_years":             "EPC time (years)",
+            "piping":                "Piping ($)",
+            "civil":                 "Civil ($)",
+            "steel":                 "Steel ($)",
+            "instrumentals":         "Instrumentals ($)",
+            "electrical":            "Electrical ($)",
+            "insulation":            "Insulation ($)",
+            "paint":                 "Paint ($)",
+            "field_office_staff":    "Field Office Staff ($)",
+            "construction_indirects":"Construction Indirects ($)",
+            "freight":               "Freight ($)",
+            "taxes_and_permits":     "Taxes and Permits ($)",
+            "engineering_and_ho":    "Engineering and HO ($)",
+            "ga_overheads":          "GA Overheads ($)",
+            "contract_fee":          "Contract Fee ($)",
         }
+        # Keys treated as integer counts, not monetary
+        _int_keys = {"n_operators", "n_supervisors", "epc_years"}
         _rows = []
         for k, v in _p.items():
             lbl = _label_map.get(k, k)
-            disp = f"${v:,.2f}" if isinstance(v, float) else str(v)
+            if k in _int_keys:
+                disp = str(int(v))
+            elif isinstance(v, float):
+                disp = f"${v:,.2f}"
+            else:
+                disp = str(v)
             _rows.append({"Field": lbl, "Imported Value": disp})
         st.dataframe(pd.DataFrame(_rows), use_container_width=False, hide_index=True)
 
