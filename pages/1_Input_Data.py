@@ -1266,13 +1266,13 @@ def _cost_table(section_key: str, editor_key: str) -> tuple[pd.DataFrame, float]
         column_config={
             "Name":       st.column_config.TextColumn("Name",       width="large"),
             "Rate":       st.column_config.NumberColumn(
-                              "Rate", min_value=0.0, step=0.01,
-                              format="%.5f",                        width="small"),
+                              "Rate", min_value=0.0, step=0.000001,
+                              format="%.6f",                        width="small"),
             "Rate Unit":  st.column_config.SelectboxColumn(
                               "Rate Unit", options=RATE_UNITS,      width="small"),
             "Price":      st.column_config.NumberColumn(
-                              "Price", min_value=0.0, step=0.01,
-                              format="%.4f",                        width="small"),
+                              "Price", min_value=0.0, step=0.000001,
+                              format="%.6f",                        width="small"),
             "Price Unit": st.column_config.SelectboxColumn(
                               "Price Unit", options=PRICE_UNITS,    width="small"),
         },
@@ -1287,6 +1287,14 @@ def _cost_table(section_key: str, editor_key: str) -> tuple[pd.DataFrame, float]
         * pd.to_numeric(active["Rate"],  errors="coerce").fillna(0.0)
         * working_hours
     )
+    # Show line cost as formatted monetary string in a display-only column
+    display_df = active.copy()
+    display_df["Cost (USD/year)"] = display_df["Line Cost"].apply(lambda v: f"${v:,.2f}")
+    if not display_df.empty:
+        st.dataframe(
+            display_df[["Name", "Rate", "Rate Unit", "Price", "Price Unit", "Cost (USD/year)"]],
+            use_container_width=True, hide_index=True,
+        )
     total = active["Line Cost"].sum()
     return active, total
 
