@@ -1,5 +1,7 @@
 import streamlit as st
 import pandas as pd
+import io
+import openpyxl
 
 st.set_page_config(page_title="Input Configuration", layout="wide")
 
@@ -453,6 +455,126 @@ def _result_row(label: str, value: float, key: str, formula: str = ""):
                       label_visibility="collapsed")
 
 
+def parse_aspen_pea(ipewb_bytes: bytes | None, reports_bytes: bytes | None,
+                    import_equip: bool, import_other: bool) -> dict:
+    """
+    Parse IPEWB and/or Reports Excel files from Aspen PEA.
+    Auto-detects legacy format (Equipment sheet) vs. new format (Equipment Summary sheet).
+    Returns a dict of session-state keys → values for all fields that could be extracted.
+    Returns an empty dict if parsing fails.
+    """
+    result = {}
+
+    # ── Parse IPEWB ───────────────────────────────────────────────────────
+    if ipewb_bytes and import_equip:
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(ipewb_bytes), data_only=True)
+            sheets = wb.sheetnames
+
+            # Auto-detect format
+            if "Equipment Summary" in sheets:
+                fmt = "new"
+            elif "Equipment" in sheets:
+                fmt = "legacy"
+            else:
+                fmt = None
+
+            if fmt == "new":
+                # Equipment acquisition: sum col H of Equipment Summary
+                ws_eq = wb["Equipment Summary"]
+                equip_acq = sum(
+                    r[7] for r in ws_eq.iter_rows(min_row=1, values_only=True)
+                    if isinstance(r[7], (int, float))
+                )
+                result["equip_acq"] = float(equip_acq)
+
+                ws_ps = wb["Project Summary"]
+                # Operators: C146, Supervisors: C155
+                ops = ws_ps.cell(row=146, column=3).value
+                sups = ws_ps.cell(row=155, column=3).value
+                # EPC: C49 (weeks) → round(weeks*7/365)
+                epc_weeks = ws_ps.cell(row=49, column=3).value
+                if epc_weeks:
+                    result["epc_years"] = max(1, round(epc_weeks * 7 / 365))
+                if import_other:
+                    # Equipment setting: C102
+                    eq_set = ws_ps.cell(row=102, column=3).value
+                    if isinstance(eq_set, (int, float)):
+                        result["equip_setting"] = float(eq_set)
+
+            elif fmt == "legacy":
+                # Equipment acquisition: sum col E of Equipment
+                ws_eq = wb["Equipment"]
+                equip_acq = sum(
+                    r[4] for r in ws_eq.iter_rows(min_row=1, values_only=True)
+                    if isinstance(r[4], (int, float))
+                )
+                result["equip_acq"] = float(equip_acq)
+
+                ws_ps = wb["Project Summary"]
+                # Operators: C225, Supervisors: C234
+                ops  = ws_ps.cell(row=225, column=3).value
+                sups = ws_ps.cell(row=234, column=3).value
+                # EPC: C62 (weeks) → round(weeks*7/365)
+                epc_weeks = ws_ps.cell(row=62, column=3).value
+                if epc_weeks:
+                    result["epc_years"] = max(1, round(epc_weeks * 7 / 365))
+                if import_other:
+                    # Equipment setting: C173
+                    eq_set = ws_ps.cell(row=173, column=3).value
+                    if isinstance(eq_set, (int, float)):
+                        result["equip_setting"] = float(eq_set)
+
+            if fmt in ("new", "legacy"):
+                if isinstance(ops, (int, float)):
+                    result["n_operators"] = max(1, int(ops))
+                if isinstance(sups, (int, float)):
+                    result["n_supervisors"] = max(1, int(sups))
+
+        except Exception as e:
+            result["_ipewb_error"] = str(e)
+
+    # ── Parse Reports ─────────────────────────────────────────────────────
+    if reports_bytes and import_other:
+        try:
+            wb_r = openpyxl.load_workbook(io.BytesIO(reports_bytes), data_only=True)
+            ws = wb_r["Proj Cost Sumry"]
+
+            def _v(row, col):
+                v = ws.cell(row=row, column=col).value
+                return float(v) if isinstance(v, (int, float)) else 0.0
+
+            # Spare parts = Reports E8 − IPEWB equipment acquisition
+            reports_total_equip = _v(8, 5)  # col E, row 8
+            ipewb_equip_acq = result.get("equip_acq", 0.0)
+            result["spare_parts"] = max(0.0, reports_total_equip - ipewb_equip_acq)
+
+            # Installation costs — col F
+            result["piping"]        = _v(9,  6)
+            result["civil"]         = _v(10, 6)
+            result["steel"]         = _v(11, 6)
+            result["instrumentals"] = _v(12, 6)
+            result["electrical"]    = _v(13, 6)
+            result["insulation"]    = _v(14, 6)
+            result["paint"]         = _v(15, 6)
+
+            # Indirect field costs — col M
+            result["field_office"]    = _v(7,  13)
+            result["const_indirects"] = _v(18, 13)
+
+            # Non-field costs — col R
+            result["freight"]       = _v(6,  18)
+            result["taxes_permits"] = _v(10, 18)
+            result["eng_ho"]        = _v(16, 18) + _v(19, 18)
+            result["ga_overheads"]  = _v(20, 18)
+            result["contract_fee"]  = _v(21, 18)
+
+        except Exception as e:
+            result["_reports_error"] = str(e)
+
+    return result
+
+
 def reset_state(keys: dict = DEFAULTS):
     """Write every key in *keys* back to session_state, and wipe Lang field overrides."""
     for k, v in keys.items():
@@ -781,6 +903,68 @@ with col_oth:
     st.selectbox("Other Costs source", ["Manual Input", "Aspen PEA", "Lang Factors"], key="oth_cost_src")
     if st.session_state.oth_cost_src == "Lang Factors":
         st.checkbox("Contains utility systems?", key="lang_utility")
+
+_eq_is_pea  = st.session_state.eq_cost_src  == "Aspen PEA"
+_oth_is_pea = st.session_state.oth_cost_src == "Aspen PEA"
+
+if _eq_is_pea or _oth_is_pea:
+    st.markdown("---")
+    st.markdown("##### Aspen PEA File Import")
+    st.caption(
+        "Upload the IPEWB (.xlsx) and/or Reports (.xlsm) files for this scenario. "
+        "The tool auto-detects the Aspen PEA version. "
+        "Imported values become the defaults for this scenario and can still be edited below."
+    )
+    col_up1, col_up2 = st.columns(2)
+    with col_up1:
+        ipewb_file = st.file_uploader(
+            "IPEWB file (.xlsx)", type=["xlsx"],
+            key="ipewb_uploader",
+            disabled=not _eq_is_pea,
+            help="Required when Equipment costs source = Aspen PEA.",
+        ) if _eq_is_pea else None
+    with col_up2:
+        reports_file = st.file_uploader(
+            "Reports file (.xlsm / .xlsx)", type=["xlsm", "xlsx"],
+            key="reports_uploader",
+            disabled=not _oth_is_pea,
+            help="Required when Other Costs source = Aspen PEA.",
+        ) if _oth_is_pea else None
+
+    # Parse on upload — only runs when a new file is present
+    _ipewb_bytes   = ipewb_file.read()   if ipewb_file   else None
+    _reports_bytes = reports_file.read() if reports_file else None
+
+    if _ipewb_bytes or _reports_bytes:
+        with st.spinner("Reading Aspen PEA files…"):
+            _parsed = parse_aspen_pea(
+                _ipewb_bytes, _reports_bytes,
+                import_equip=_eq_is_pea,
+                import_other=_oth_is_pea,
+            )
+
+        # Report errors first
+        _errs = [v for k, v in _parsed.items() if k.startswith("_") and k.endswith("_error")]
+        if _errs:
+            for e in _errs:
+                st.error(f"Import error: {e}")
+        else:
+            # Write all extracted values into session state as new defaults
+            _skipped = ("_ipewb_error", "_reports_error")
+            _count = 0
+            for k, v in _parsed.items():
+                if k not in _skipped:
+                    st.session_state[k] = v
+                    _count += 1
+            # Force widget re-seed for Lang override if active
+            if st.session_state.get("allow_override"):
+                _seed_override_values()
+            st.success(
+                f"✓ Aspen PEA import complete — {_count} field(s) populated. "
+                "Values are pre-filled below and can be adjusted."
+            )
+            st.rerun()
+
 st.divider()
 
 # 5. Decision Making Assistant
