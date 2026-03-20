@@ -315,49 +315,60 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
     html = header + "".join(body_rows) + "</tbody></table></div>"
     st.markdown(html, unsafe_allow_html=True)
 
-    # ── Price editors (below the table) ───────────────────────────────────────
+    # ── Price editors: one row per item, input + reset button ────────────────
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown(
         '<p style="font-family:Inter,sans-serif;font-size:.75rem;color:#58a6ff;'
-        'text-transform:uppercase;letter-spacing:.08em;margin-bottom:.4rem">'
-        'Edit prices below — delete value and press Enter to restore default</p>',
+        'text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem">'
+        'Edit prices — press ↩ to restore to session default</p>',
         unsafe_allow_html=True
     )
 
-    n_cols = min(len(rows), 4)
-    cols = st.columns(n_cols)
     changed = False
-    for i, row in enumerate(rows):
-        name = row["name"]
-        modified = row["modified"]
+    for row in rows:
+        name      = row["name"]
+        modified  = row["modified"]
+        inp_def   = row["input_default"]
+        wgt_key   = f"cf_{scenario_name}_{table_key}_{name}"
+        reset_key = f"rst_{scenario_name}_{table_key}_{name}"
+
         label_color = "#e6a817" if modified else "#8b949e"
-        default_hint = f" (default: {row['input_default']:.6g})" if modified else ""
-        with cols[i % n_cols]:
+
+        col_lbl, col_inp, col_btn = st.columns([2, 1, 1])
+
+        with col_lbl:
+            hint = f"  ← default: {inp_def:.6g}" if modified else ""
             st.markdown(
-                f'<p style="font-family:Inter,sans-serif;font-size:.72rem;'
-                f'color:{label_color};margin-bottom:2px">'
-                f'{name}{default_hint}</p>',
+                f'<p style="font-family:Inter,sans-serif;font-size:.82rem;'
+                f'color:{label_color};margin:0;padding:.45rem 0">'
+                f'{name}<span style="font-size:.72rem;color:#8b949e">{hint}</span></p>',
                 unsafe_allow_html=True
             )
+
+        with col_inp:
             new_val = st.number_input(
                 name,
                 value=float(row["price"]),
                 min_value=0.0,
                 step=0.001,
                 format="%.6f",
-                key=f"cf_{scenario_name}_{table_key}_{name}",
+                key=wgt_key,
                 label_visibility="collapsed",
             )
-            # If user clears to 0 and the default is non-zero → reset to input default
-            inp_def  = row["input_default"]
-            wgt_key  = f"cf_{scenario_name}_{table_key}_{name}"
-            if new_val == 0.0 and inp_def != 0.0:
+            if abs(new_val - row["price"]) > 1e-12:
+                wk[table_key][name] = new_val
+                changed = True
+
+        with col_btn:
+            if st.button(
+                f"↩ {inp_def:.6g}",
+                key=reset_key,
+                help=f"Restore to default: {inp_def:.6g}",
+                disabled=not modified,
+            ):
                 wk[table_key][name] = inp_def
-                # Delete widget key so it re-initialises from value= on next run
                 st.session_state.pop(wgt_key, None)
                 changed = True
-            elif abs(new_val - row["price"]) > 1e-12:
-                wk[table_key][name] = new_val
                 changed = True
 
     if changed:
