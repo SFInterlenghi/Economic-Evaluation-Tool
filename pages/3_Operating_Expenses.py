@@ -291,13 +291,14 @@ for src_idx, key, lbl in fc_components:
         sources.append(2); targets.append(len(node_labels)-1); values.append(v)
         link_labels.append(lbl)
 
-# Node colors
-node_colors = ["#e6a817","#58a6ff","#3fb950"] + ["#58a6ff66","#79c0ff66","#f8514966"]
-node_colors += ["#3b7dd833"] * len(rm_node_idx)
-node_colors += ["#2ea04366"] * len(cu_node_idx)
-fc_colors = ["#3fb950","#e6a817","#f78166","#bc8cff"]
-for clr in fc_colors[:len(fc_components)]:
-    node_colors.append(clr + "99")
+# Node colors — must use rgba() format, Plotly Sankey rejects 8-char hex
+node_colors = ["#e6a817","#58a6ff","#3fb950"]
+node_colors += ["rgba(88,166,255,0.35)","rgba(121,192,255,0.35)","rgba(248,81,73,0.35)"]
+node_colors += ["rgba(59,125,216,0.25)"] * len(rm_node_idx)
+node_colors += ["rgba(46,160,67,0.25)"]  * len(cu_node_idx)
+fc_rgba = ["rgba(63,185,80,0.6)","rgba(230,168,23,0.6)","rgba(247,129,102,0.6)","rgba(188,140,255,0.6)"]
+n_fc_added = sum(1 for _, key, _ in fc_components if _v(ds, key) > 0)
+node_colors += fc_rgba[:n_fc_added]
 
 fig_sankey = go.Figure(go.Sankey(
     arrangement="snap",
@@ -330,32 +331,32 @@ with st.expander("Full Detailed Breakdown", expanded=False):
         ("I", "    Raw Materials",                  "Total Raw Material Cost"),
         ("I", "    Chemical Inputs & Utilities",    "Total Chemical Inputs Utilities"),
         ("I", "    Credits & Byproducts (-)",       "Total Revenue"),
-        ("S", "  > Total Variable Costs",           "_tvc"),
+        ("S", "    -- Total Variable Costs",        "_tvc"),
         ("H", "FIXED COSTS — LABOR",               None),
         ("I", "    OLC",                            "OLC"),
         ("I", "    Lab Charges (%)",                "Lab Charges Pct"),
         ("I", "    Office Labor (%)",               "Office Labor Pct"),
-        ("S", "  > Total Labor Costs",              "Total Labor Costs"),
+        ("S", "    -- Total Labor Costs",           "Total Labor Costs"),
         ("H", "SUPPLY & MAINTENANCE",              None),
         ("I", "    Maintenance & Repairs (%)",      "Maint Pct"),
         ("I", "    Operating Supplies (%)",         "Op Sup Pct"),
-        ("S", "  > Supply & Maintenance Costs",     "Supply Maint Costs"),
+        ("S", "    -- Supply & Maintenance Costs",  "Supply Maint Costs"),
         ("H", "ADDITIONAL FIXED COSTS (AFC)",      None),
         ("I", "    Admin Overhead (%)",             "Admin Ov Pct"),
         ("I", "    Manufacturing Overhead (%)",     "Mfg Ov Pct"),
         ("I", "    Taxes & Insurance (%)",          "Taxes Ins Pct"),
         ("I", "    Patents & Royalties (%)",        "Patents Pct"),
-        ("S", "  > AFC",                            "AFC Pre Patents"),
-        ("T", "  = Direct Fixed Costs",             "Direct Fixed Costs"),
+        ("S", "    -- AFC",                         "AFC Pre Patents"),
+        ("T", "    == Direct Fixed Costs",          "Direct Fixed Costs"),
         ("H", "INDIRECT FIXED COSTS",              None),
         ("I", "    Administrative Costs (%)",       "Admin Costs Pct"),
         ("I", "    Manufacturing Costs (%)",        "Mfg Costs Pct"),
         ("I", "    Distribution & Selling (%)",     "Dist Sell Pct"),
         ("I", "    Research & Development (%)",     "R D Pct"),
-        ("S", "  > Indirect Fixed Costs",           "Indirect Fixed Costs"),
+        ("S", "    -- Indirect Fixed Costs",        "Indirect Fixed Costs"),
         ("H", "TOTALS",                            None),
-        ("S", "  > Total Fixed Costs",             "Total Fixed Costs"),
-        ("T", "  = TOTAL OPEX",                    "Total OPEX"),
+        ("S", "    -- Total Fixed Costs",           "Total Fixed Costs"),
+        ("T", "    == TOTAL OPEX",                  "Total OPEX"),
     ]
 
     def _cell(rtype, key, d):
