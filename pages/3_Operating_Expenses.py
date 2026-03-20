@@ -17,7 +17,7 @@ html,body,[data-testid="stAppViewContainer"]{background-color:var(--bg)!importan
 [data-testid="stSidebar"]{background:var(--surface)!important;}
 [data-testid="stHeader"]{background:transparent!important;}
 h1,h2,h3{font-family:'Syne',sans-serif!important;color:var(--text)!important;}
-p,span,div,td,th{font-family:'Inter',sans-serif!important;color:var(--text-dim)!important;}
+.material-symbols-rounded{font-family:'Material Symbols Rounded'!important;}
 .hero-title{font-family:'Syne',sans-serif;font-size:2.4rem;font-weight:800;color:var(--text);letter-spacing:-.03em;line-height:1.1;margin-bottom:.15rem;}
 .hero-sub{font-family:'Inter',sans-serif;font-size:.9rem;font-weight:300;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;}
 .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.2rem 1.4rem;border-left:3px solid var(--accent);}
