@@ -348,11 +348,15 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
                 key=f"cf_{scenario_name}_{table_key}_{name}",
                 label_visibility="collapsed",
             )
-            # If user clears to 0 and item had a non-zero default, treat as reset
-            inp_def = row["input_default"]
+            # If user clears to 0 and the default is non-zero → reset to input default
+            inp_def  = row["input_default"]
+            wgt_key  = f"cf_{scenario_name}_{table_key}_{name}"
             if new_val == 0.0 and inp_def != 0.0:
-                new_val = inp_def
-            if abs(new_val - row["price"]) > 1e-12:
+                wk[table_key][name] = inp_def
+                # Delete widget key so it re-initialises from value= on next run
+                st.session_state.pop(wgt_key, None)
+                changed = True
+            elif abs(new_val - row["price"]) > 1e-12:
                 wk[table_key][name] = new_val
                 changed = True
 
