@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Investment Costs", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Investment Costs", layout="wide")
 
 st.markdown("""
 <style>
@@ -220,59 +220,102 @@ fig_wf.update_layout(
 st.plotly_chart(fig_wf, use_container_width=True)
 
 # ── Detailed breakdown table ───────────────────────────────────────────────────
-with st.expander("Full Detailed Breakdown", expanded=False):
-    ROWS = [
-        ("H", "EQUIPMENT COSTS",             None),
-        ("I", "    Equipment Acquisition",   "Equipment Acquisition"),
-        ("I", "    Spare Parts",             "Spare Parts"),
-        ("I", "    Equipment Setting",       "Equipment Setting"),
-        ("S", "    -- Base Equipment Costs", "Base Equipment Costs"),
-        ("I", "    Unscheduled Equipment",   "_unscheduled"),
-        ("S", "    -- Total Equipment Costs","Total Equipment Costs"),
-        ("H", "INSTALLATION COSTS",          None),
-        ("I", "    Piping",                  "Piping"),
-        ("I", "    Civil",                   "Civil"),
-        ("I", "    Steel",                   "Steel"),
-        ("I", "    Instrumentals",           "Instrumentals"),
-        ("I", "    Electrical",              "Electrical"),
-        ("I", "    Insulation",              "Insulation"),
-        ("I", "    Paint",                   "Paint"),
-        ("S", "    -- Total Installation",   "Total Installation Costs"),
-        ("H", "INDIRECT & NON-FIELD",        None),
-        ("I", "    Field Office Staff",       "Field Office Staff"),
-        ("I", "    Construction Indirects",   "Construction Indirects"),
-        ("I", "    Freight",                  "Freight"),
-        ("I", "    Taxes & Permits",          "Taxes and Permits"),
-        ("I", "    Engineering & HO",         "Engineering and HO"),
-        ("I", "    GA Overheads",             "GA Overheads"),
-        ("I", "    Contract Fee",             "Contract Fee"),
-        ("H", "CAPEX SUMMARY",               None),
-        ("S", "    -- Project Costs ISBL+OSBL","Project Costs ISBL+OSBL"),
-        ("I", "    Contingency",             "Contingency Pct"),
-        ("I", "    Time Update Factor",      "Time Update Factor"),
-        ("I", "    Location Factor",         "Location Factor"),
-        ("T", "    == PROJECT CAPEX",        "Project CAPEX"),
-        ("H", "TOTAL INVESTMENT",            None),
-        ("I", "    Working Capital",         "Working Capital"),
-        ("I", "    Startup Costs",           "Startup Costs"),
-        ("I", "    Additional Costs",        "Additional Costs"),
-        ("T", "    == TOTAL INVESTMENT COST","Total Investment"),
-    ]
+st.markdown('<div class="section-hdr">Detailed Breakdown</div>', unsafe_allow_html=True)
 
-    def _cell(rtype, key, d):
-        if key is None: return ""
-        if key == "_unscheduled":
-            return fmtd(_v(d,"Total Equipment Costs") - _v(d,"Base Equipment Costs"))
-        v = d.get(key)
-        if v is None: return "—"
-        if key == "Contingency Pct": return fpct(v)
-        if key in ("Time Update Factor","Location Factor"): return f"{v:.4f}"
-        return fmtd(v)
+ROWS = [
+    ("H", "EQUIPMENT COSTS",              None),
+    ("I", "Equipment Acquisition",        "Equipment Acquisition"),
+    ("I", "Spare Parts",                  "Spare Parts"),
+    ("I", "Equipment Setting",            "Equipment Setting"),
+    ("S", "Base Equipment Costs",         "Base Equipment Costs"),
+    ("I", "Unscheduled Equipment",        "_unscheduled"),
+    ("S", "Total Equipment Costs",        "Total Equipment Costs"),
+    ("H", "INSTALLATION COSTS",           None),
+    ("I", "Piping",                       "Piping"),
+    ("I", "Civil",                        "Civil"),
+    ("I", "Steel",                        "Steel"),
+    ("I", "Instrumentals",                "Instrumentals"),
+    ("I", "Electrical",                   "Electrical"),
+    ("I", "Insulation",                   "Insulation"),
+    ("I", "Paint",                        "Paint"),
+    ("S", "Total Installation Costs",     "Total Installation Costs"),
+    ("H", "INDIRECT & NON-FIELD",         None),
+    ("I", "Field Office Staff",           "Field Office Staff"),
+    ("I", "Construction Indirects",       "Construction Indirects"),
+    ("I", "Freight",                      "Freight"),
+    ("I", "Taxes & Permits",              "Taxes and Permits"),
+    ("I", "Engineering & HO",             "Engineering and HO"),
+    ("I", "GA Overheads",                 "GA Overheads"),
+    ("I", "Contract Fee",                 "Contract Fee"),
+    ("H", "CAPEX SUMMARY",                None),
+    ("S", "Project Costs ISBL+OSBL",      "Project Costs ISBL+OSBL"),
+    ("I", "Contingency",                  "Contingency Pct"),
+    ("I", "Time Update Factor",           "Time Update Factor"),
+    ("I", "Location Factor",              "Location Factor"),
+    ("T", "PROJECT CAPEX",                "Project CAPEX"),
+    ("H", "TOTAL INVESTMENT",             None),
+    ("I", "Working Capital",              "Working Capital"),
+    ("I", "Startup Costs",                "Startup Costs"),
+    ("I", "Additional Costs",             "Additional Costs"),
+    ("T", "TOTAL INVESTMENT COST",        "Total Investment"),
+]
 
-    tbl = {"Line Item": [r[1] for r in ROWS]}
-    for name in selected:
-        tbl[name] = [_cell(r[0], r[2], scenarios[name]) for r in ROWS]
+def _cell(rtype, key, d):
+    if key is None: return ""
+    if key == "_unscheduled":
+        return fmtd(_v(d,"Total Equipment Costs") - _v(d,"Base Equipment Costs"))
+    v = d.get(key)
+    if v is None: return "—"
+    if key == "Contingency Pct": return fpct(v)
+    if key in ("Time Update Factor","Location Factor"): return f"{v:.4f}"
+    return fmtd(v)
 
-    st.dataframe(pd.DataFrame(tbl), use_container_width=True, hide_index=True,
-        column_config={"Line Item": st.column_config.TextColumn("Line Item", width="large")}
-        | {n: st.column_config.TextColumn(n, width="medium") for n in selected})
+# Build HTML table
+_scen_headers = "".join(
+    f'<th style="padding:.5rem .9rem;text-align:right;font-family:Syne,sans-serif;'
+    f'font-size:.75rem;color:{cmap[n]};border-bottom:2px solid {cmap[n]}44;white-space:nowrap">{n}</th>'
+    for n in selected
+)
+html_rows = []
+for rtype, label, key in ROWS:
+    if rtype == "H":
+        row_html = (
+            f'<tr><td colspan="{len(selected)+1}" style="padding:.6rem .9rem .2rem;'
+            f'font-family:Syne,sans-serif;font-size:.65rem;font-weight:700;'
+            f'color:#e6a817;text-transform:uppercase;letter-spacing:.12em;'
+            f'background:#0d1117;border-top:1px solid #21262d">{label}</td></tr>'
+        )
+    else:
+        is_total = rtype == "T"
+        is_sub   = rtype == "S"
+        indent   = "0" if is_total else ("1rem" if is_sub else "2rem")
+        bg       = "#1a2030" if is_total else ("#161b22" if is_sub else "transparent")
+        fw       = "600" if (is_total or is_sub) else "400"
+        fc       = "#e6edf3" if is_total else ("#c9d1d9" if is_sub else "#8b949e")
+        cells    = "".join(
+            f'<td style="padding:.4rem .9rem;text-align:right;font-family:DM Mono,monospace;'
+            f'font-size:.8rem;color:{fc};white-space:nowrap">{_cell(rtype, key, scenarios[n])}</td>'
+            for n in selected
+        )
+        row_html = (
+            f'<tr style="background:{bg};border-bottom:1px solid #21262d22">'
+            f'<td style="padding:.4rem .9rem .4rem {indent};font-family:Inter,sans-serif;'
+            f'font-size:.82rem;font-weight:{fw};color:{fc}">{label}</td>'
+            f'{cells}</tr>'
+        )
+    html_rows.append(row_html)
+
+html_table = f"""
+<div style="overflow-x:auto;border:1px solid #21262d;border-radius:8px;background:#161b22">
+<table style="width:100%;border-collapse:collapse">
+<thead><tr>
+  <th style="padding:.5rem .9rem;text-align:left;font-family:Syne,sans-serif;
+      font-size:.75rem;color:#8b949e;border-bottom:2px solid #21262d;min-width:220px">
+      Line Item</th>
+  {_scen_headers}
+</tr></thead>
+<tbody>{"".join(html_rows)}</tbody>
+</table>
+</div>
+"""
+st.markdown(html_table, unsafe_allow_html=True)
