@@ -701,6 +701,35 @@ for key, default in DEFAULTS.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
+# ── Database overrides ─────────────────────────────────────────────────────
+# If the user has edited reference tables on the Database page, those edits are
+# stored in st.session_state under "db_<TABLE_NAME>" and applied here so the
+# rest of this page uses the user-modified versions throughout.
+def _db(name, default):
+    return st.session_state.get(f"db_{name}", default)
+
+UNSCHED_FACTORS     = _db("UNSCHED_FACTORS",     UNSCHED_FACTORS)
+LANG_FACTORS        = _db("LANG_FACTORS",         LANG_FACTORS)
+PROJECT_CONTINGENCY = _db("PROJECT_CONTINGENCY",  PROJECT_CONTINGENCY)
+LAB_CHARGES         = _db("LAB_CHARGES",          LAB_CHARGES)
+OFFICE_LABOR        = _db("OFFICE_LABOR",         OFFICE_LABOR)
+MAINTENANCE_REPAIRS = _db("MAINTENANCE_REPAIRS",  MAINTENANCE_REPAIRS)
+OPERATING_SUPPLIES  = _db("OPERATING_SUPPLIES",   OPERATING_SUPPLIES)
+ADMIN_OVERHEAD      = _db("ADMIN_OVERHEAD",       ADMIN_OVERHEAD)
+MFG_OVERHEAD        = _db("MFG_OVERHEAD",         MFG_OVERHEAD)
+TAXES_INSURANCE     = _db("TAXES_INSURANCE",      TAXES_INSURANCE)
+PATENTS_ROYALTIES   = _db("PATENTS_ROYALTIES",    PATENTS_ROYALTIES)
+DIST_SELLING        = _db("DIST_SELLING",         DIST_SELLING)
+R_AND_D             = _db("R_AND_D",              R_AND_D)
+TIC_LOWER           = _db("TIC_LOWER",            TIC_LOWER)
+TIC_UPPER           = _db("TIC_UPPER",            TIC_UPPER)
+TAXES_BY_COUNTRY    = _db("TAXES_BY_COUNTRY",     TAXES_BY_COUNTRY)
+COUNTRY_LIST        = sorted(TAXES_BY_COUNTRY.keys())
+
+for key, default in DEFAULTS.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
+
 # Deferred clear (must run before widgets are drawn)
 if st.session_state.pop("clear_on_next_run", False):
     reset_state()
