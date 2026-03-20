@@ -7,6 +7,7 @@ st.set_page_config(page_title="Investment Costs", layout="wide")
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=Inter:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200');
 :root {
     --bg:#0d1117; --surface:#161b22; --border:#21262d;
     --accent:#e6a817; --muted:#8b949e;
@@ -25,6 +26,9 @@ p,span,div,td,th{font-family:'Inter',sans-serif!important;color:var(--text-dim)!
 .kpi-scenario{font-family:'Inter',sans-serif;font-size:.72rem;color:var(--muted);margin-top:.3rem;}
 .section-hdr{font-family:'Syne',sans-serif;font-size:.7rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.15em;padding:.6rem 0 .3rem 0;border-bottom:1px solid var(--border);margin-bottom:.5rem;}
 .divider{border:none;border-top:1px solid var(--border);margin:1.5rem 0;}
+/* Hide sidebar collapse toggle — icon font sometimes renders as raw text */
+[data-testid="collapsedControl"] { display: none !important; }
+button[data-testid="baseButton-headerNoPadding"] { display: none !important; }
 .scen-badge{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:1rem 1.2rem;height:100%;}
 .scen-name{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--text);margin-bottom:.5rem;}
 .scen-tag{display:inline-block;font-family:'DM Mono',monospace;font-size:.7rem;padding:.15rem .5rem;border-radius:4px;margin:.15rem .1rem 0 0;}
