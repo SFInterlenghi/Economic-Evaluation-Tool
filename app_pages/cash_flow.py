@@ -87,6 +87,7 @@ with col_reset:
                 wgt_key = f"cf_{scenario_name}_{tbl}_{item_name}"
                 st.session_state[wgt_key] = float(price)
         st.rerun()
+
 # ── Scenario summary ──────────────────────────────────────────────────────────
 prod_name = d.get("Product Name", "—")
 prod_unit = d.get("Unit", "")
@@ -297,7 +298,7 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
                 wk[table_key][name] = new_val
                 changed = True
 
-with col_btn:
+        with col_btn:
             if st.button(
                 f"↩ {inp_def:.6g}",
                 key=reset_key,
@@ -308,6 +309,7 @@ with col_btn:
                 # Force the widget to show the default value on rerun
                 st.session_state[wgt_key] = float(inp_def)
                 changed = True
+
     if changed:
         st.rerun()
 
