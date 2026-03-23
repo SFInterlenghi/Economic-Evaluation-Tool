@@ -81,8 +81,12 @@ with col_reset:
     if st.button("↺  Reset all to defaults", type="secondary", use_container_width=True):
         sd = st.session_state.cf_session_defaults.get(scenario_name, {})
         st.session_state.cf_working[scenario_name] = {tbl: dict(p) for tbl, p in sd.items()}
+        # Force all price widget keys for this scenario to their default values
+        for tbl, prices in sd.items():
+            for item_name, price in prices.items():
+                wgt_key = f"cf_{scenario_name}_{tbl}_{item_name}"
+                st.session_state[wgt_key] = float(price)
         st.rerun()
-
 # ── Scenario summary ──────────────────────────────────────────────────────────
 prod_name = d.get("Product Name", "—")
 prod_unit = d.get("Unit", "")
