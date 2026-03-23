@@ -1,5 +1,6 @@
 """ISI-Tool — Operating Expenses dashboard."""
 import streamlit as st
+import math
 import plotly.graph_objects as go
 from utils.constants import safe_val, fmt_compact, smart_fmt, PLOTLY_LAYOUT
 from utils.ui import (
@@ -31,19 +32,55 @@ for col, (name, d) in zip(cols_banner, active.items()):
 
 st.space("medium")
 
-# ── KPI Cards ─────────────────────────────────────────────────────────────────
+# ── KPI Cards — with variable/fixed ratio ────────────────────────────────────
 section_header("Total OPEX per scenario", "#3fb950")
 cols_kpi = st.columns(len(active))
 for col, (name, d) in zip(cols_kpi, active.items()):
     opex = safe_val(d, "Total OPEX")
     tvc_v = tvc(d)
     fc = safe_val(d, "Total Fixed Costs")
+
+    # Variable / Fixed ratio
+    if opex > 0:
+        var_pct = tvc_v / opex * 100
+        fix_pct = 100 - var_pct
+        ratio_str = f"{var_pct:.0f}% variable / {fix_pct:.0f}% fixed"
+    else:
+        ratio_str = "—"
+
     with col:
         kpi_card(
             f"Total Annual OPEX — {name}", fmt(opex), cmap[name],
             "Variable / Fixed",
             f"{fmt_compact(tvc_v)} | {fmt_compact(fc)}",
         )
+        st.caption(ratio_str)
+
+st.space("medium")
+
+# ── Unit Economics row ───────────────────────────────────────────────────────
+section_header("OPEX per unit product", "#3fb950")
+cols_ue = st.columns(len(active))
+for col, (name, d) in zip(cols_ue, active.items()):
+    opex = safe_val(d, "Total OPEX")
+    capacity = safe_val(d, "Capacity")
+    unit = d.get("Unit", "unit")
+    tvc_v = tvc(d)
+    fc = safe_val(d, "Total Fixed Costs")
+
+    with col:
+        if capacity > 0:
+            opex_per_unit = opex / capacity
+            var_per_unit = tvc_v / capacity
+            fix_per_unit = fc / capacity
+            st.metric(
+                f"OPEX per {unit}",
+                f"${opex_per_unit:,.2f}",
+                border=True,
+            )
+            st.caption(f"Variable: ${var_per_unit:,.2f} / {unit}  —  Fixed: ${fix_per_unit:,.2f} / {unit}")
+        else:
+            st.metric(f"OPEX per {unit}", "—", border=True)
 
 st.space("medium")
 
@@ -93,6 +130,59 @@ with col_r:
         ))
     fig_vc.update_layout(**PLOTLY_LAYOUT, barmode="group", height=320)
     st.plotly_chart(fig_vc, use_container_width=True)
+
+# ── Labor Detail — expandable per scenario ───────────────────────────────────
+section_header("Labor cost detail", "#3fb950")
+
+for name in selected:
+    d = scenarios[name]
+    total_labor = safe_val(d, "Total Labor Costs")
+    olc = safe_val(d, "OLC")
+    n_ops = d.get("Num Operators", "—")
+    n_sups = d.get("Num Supervisors", "—")
+    op_sal = d.get("Operator Salary", 0)
+    sup_sal = d.get("Supervisor Salary", 0)
+    sal_charges = d.get("Salary Charges", 0)
+    op_team = d.get("Operating Team Factor", "—")
+    lab_pct = d.get("Lab Charges Pct")
+    off_pct = d.get("Office Labor Pct")
+    whrs = safe_val(d, "Working Hours per Year", 8000)
+    daily_h = d.get("Plant Daily Hours", "—")
+    weekly_d = d.get("Weekly Op Days", "—")
+
+    with st.expander(
+        f"{name} — Labor: {fmt(total_labor)}  (OLC: {fmt(olc)})",
+        icon=":material/groups:",
+    ):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**Workforce**")
+            st.caption(f"Operators per shift: **{n_ops}**")
+            st.caption(f"Supervisors per shift: **{n_sups}**")
+            st.caption(f"Operating team factor: **{op_team}**")
+            st.caption(f"Salary charges multiplier: **{sal_charges}**")
+        with c2:
+            st.markdown("**Salaries (USD/month)**")
+            st.caption(f"Operator: **${op_sal:,.2f}**" if isinstance(op_sal, (int, float)) else "Operator: —")
+            st.caption(f"Supervisor: **${sup_sal:,.2f}**" if isinstance(sup_sal, (int, float)) else "Supervisor: —")
+        with c3:
+            st.markdown("**Operating schedule**")
+            st.caption(f"Working hours/year: **{whrs:,.0f} h**")
+            st.caption(f"Plant daily hours: **{daily_h}** h/day")
+            st.caption(f"Weekly operation days: **{weekly_d}** days/week")
+
+        st.space("small")
+        c4, c5, c6 = st.columns(3)
+        with c4:
+            st.metric("OLC", fmt(olc), border=True)
+        with c5:
+            lab_str = f"{lab_pct * 100:.2f}%" if lab_pct is not None else "—"
+            st.metric("Lab charges", lab_str, border=True)
+        with c6:
+            off_str = f"{off_pct * 100:.2f}%" if off_pct is not None else "—"
+            st.metric("Office labor", off_str, border=True)
+
+st.space("medium")
 
 # ── Sankey Diagram ────────────────────────────────────────────────────────────
 section_header("Cost flow — Sankey diagram", "#3fb950")
