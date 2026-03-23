@@ -30,7 +30,7 @@ for col, (name, d) in zip(cols_banner, active.items()):
 
 st.space("medium")
 
-# ── KPI Cards ─────────────────────────────────────────────────────────────────
+# ── KPI Cards — TIC with accuracy bounds ─────────────────────────────────────
 section_header("Total Investment Cost per scenario", "#e6a817")
 cols_kpi = st.columns(len(active))
 for col, (name, d) in zip(cols_kpi, active.items()):
@@ -38,15 +38,113 @@ for col, (name, d) in zip(cols_kpi, active.items()):
     capex = safe_val(d, "Project CAPEX")
     wc = safe_val(d, "Working Capital")
     su = safe_val(d, "Startup Costs")
+
+    # TIC accuracy bounds
+    tic_lo_pct = d.get("TIC Lower Pct")
+    tic_hi_pct = d.get("TIC Upper Pct")
+    if tic_lo_pct is not None and tic_hi_pct is not None and tic > 0:
+        tic_lo = tic * (1 + tic_lo_pct / 100.0)
+        tic_hi = tic * (1 + tic_hi_pct / 100.0)
+        range_str = f"Range: {fmt_compact(tic_lo)} to {fmt_compact(tic_hi)}  ({tic_lo_pct:+.0f}% / {tic_hi_pct:+.0f}%)"
+    else:
+        range_str = "Accuracy bounds: N/A"
+
     with col:
         kpi_card(
             f"Total Investment — {name}", fmt(tic), cmap[name],
-            "CAPEX / WC / S-U", f"{fmt_compact(capex)} | {fmt_compact(wc)} | {fmt_compact(su)}",
+            "CAPEX / WC / S-U",
+            f"{fmt_compact(capex)} | {fmt_compact(wc)} | {fmt_compact(su)}",
         )
+        st.caption(range_str)
 
 st.space("medium")
 
-# ── Charts ────────────────────────────────────────────────────────────────────
+# ── Unit Economics + ISBL/OSBL row ───────────────────────────────────────────
+section_header("Unit economics & cost structure", "#e6a817")
+cols_ue = st.columns(len(active))
+for col, (name, d) in zip(cols_ue, active.items()):
+    tic = safe_val(d, "Total Investment")
+    capex = safe_val(d, "Project CAPEX")
+    capacity = safe_val(d, "Capacity")
+    unit = d.get("Unit", "unit")
+    isbl_pct = safe_val(d, "ISBL Contribution (%)", 100.0)
+    osbl_pct = 100.0 - isbl_pct
+
+    with col:
+        # Unit economics
+        if capacity > 0:
+            tic_per_unit = tic / capacity
+            capex_per_unit = capex / capacity
+            st.metric(
+                f"TIC per {unit}/yr",
+                f"${tic_per_unit:,.2f}",
+                border=True,
+            )
+            st.caption(f"CAPEX: ${capex_per_unit:,.2f} / {unit}/yr")
+        else:
+            st.metric(f"TIC per {unit}/yr", "—", border=True)
+
+        # ISBL / OSBL split
+        fig_isbl = go.Figure(go.Pie(
+            labels=["ISBL", "OSBL"],
+            values=[isbl_pct, osbl_pct],
+            hole=0.6,
+            textinfo="label+percent",
+            textfont=dict(size=11, color="#c9d1d9"),
+            marker=dict(colors=[cmap[name], "#21262d"], line=dict(color="#0d1117", width=2)),
+            hoverinfo="label+percent",
+        ))
+        fig_isbl.update_layout(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=5, r=5, t=5, b=5), height=130,
+            showlegend=False,
+            annotations=[dict(
+                text=f"{isbl_pct:.0f}%<br>ISBL",
+                x=0.5, y=0.5, font=dict(size=12, color="#8b949e"),
+                showarrow=False,
+            )],
+        )
+        st.plotly_chart(fig_isbl, use_container_width=True)
+
+st.space("medium")
+
+# ── TIC Accuracy — visual range chart ────────────────────────────────────────
+has_bounds = any(
+    d.get("TIC Lower Pct") is not None and d.get("TIC Upper Pct") is not None
+    for d in active.values()
+)
+if has_bounds:
+    section_header("TIC accuracy range", "#e6a817")
+    fig_range = go.Figure()
+    for name in selected:
+        d = scenarios[name]
+        tic = safe_val(d, "Total Investment")
+        lo_pct = d.get("TIC Lower Pct")
+        hi_pct = d.get("TIC Upper Pct")
+        if lo_pct is not None and hi_pct is not None and tic > 0:
+            lo_val = tic * (1 + lo_pct / 100.0)
+            hi_val = tic * (1 + hi_pct / 100.0)
+            fig_range.add_trace(go.Bar(
+                name=name, x=[name], y=[tic],
+                text=[fmt(tic)], textposition="inside",
+                textfont=dict(family="DM Mono", size=12, color="white"),
+                marker=dict(color=cmap[name], line_width=0),
+                error_y=dict(
+                    type="data", symmetric=False,
+                    array=[hi_val - tic], arrayminus=[tic - lo_val],
+                    color="#8b949e", thickness=2, width=8,
+                ),
+            ))
+    fig_range.update_layout(
+        **{k: v for k, v in PLOTLY_LAYOUT.items() if k != "yaxis"},
+        height=280, showlegend=False,
+        yaxis=dict(gridcolor="#21262d", tickformat="$,.0f",
+                   tickfont=dict(family="DM Mono", size=11)),
+    )
+    st.plotly_chart(fig_range, use_container_width=True)
+    st.space("medium")
+
+# ── Charts — TIC composition + CAPEX components ─────────────────────────────
 col_l, col_r = st.columns(2)
 
 with col_l:
@@ -163,6 +261,7 @@ ROWS = [
     ("I", "GA Overheads", "GA Overheads"), ("I", "Contract Fee", "Contract Fee"),
     ("H", "CAPEX SUMMARY", None),
     ("S", "Project Costs ISBL+OSBL", "Project Costs ISBL+OSBL"),
+    ("I", "ISBL Contribution", "ISBL Contribution (%)"),
     ("I", "Contingency", "Contingency Pct"),
     ("I", "Time Update Factor", "Time Update Factor"),
     ("I", "Location Factor", "Location Factor"),
@@ -181,6 +280,7 @@ def _cell(rtype, key, d):
     v = d.get(key)
     if v is None: return "—"
     if key == "Contingency Pct": return fpct(v)
+    if key == "ISBL Contribution (%)": return f"{v:.1f}%"
     if key in ("Time Update Factor", "Location Factor"): return f"{v:.4f}"
     return fmtd(v)
 
