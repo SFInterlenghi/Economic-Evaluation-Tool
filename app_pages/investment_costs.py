@@ -133,7 +133,8 @@ fig_wf = go.Figure(go.Waterfall(
     totals=dict(marker=dict(color=c0, line_width=0)),
 ))
 fig_wf.update_layout(
-    **PLOTLY_LAYOUT, height=360, showlegend=False,
+    **{k: v for k, v in PLOTLY_LAYOUT.items() if k != "xaxis"},
+    height=360, showlegend=False,
     xaxis=dict(tickfont=dict(family="DM Sans", size=10, color="#c9d1d9"), tickangle=-30),
 )
 st.plotly_chart(fig_wf, use_container_width=True)
