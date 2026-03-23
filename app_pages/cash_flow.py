@@ -81,11 +81,10 @@ with col_reset:
     if st.button("↺  Reset all to defaults", type="secondary", use_container_width=True):
         sd = st.session_state.cf_session_defaults.get(scenario_name, {})
         st.session_state.cf_working[scenario_name] = {tbl: dict(p) for tbl, p in sd.items()}
-        # Force all price widget keys for this scenario to their default values
+        # Pop all price widget keys so they get re-created with default values on rerun
         for tbl, prices in sd.items():
-            for item_name, price in prices.items():
-                wgt_key = f"cf_{scenario_name}_{tbl}_{item_name}"
-                st.session_state[wgt_key] = float(price)
+            for item_name in prices:
+                st.session_state.pop(f"cf_{scenario_name}_{tbl}_{item_name}", None)
         st.rerun()
 
 # ── Scenario summary ──────────────────────────────────────────────────────────
@@ -306,8 +305,8 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
                 disabled=not modified,
             ):
                 wk[table_key][name] = inp_def
-                # Force the widget to show the default value on rerun
-                st.session_state[wgt_key] = float(inp_def)
+                # Pop the widget key so it re-creates with the default on rerun
+                st.session_state.pop(wgt_key, None)
                 changed = True
 
     if changed:
