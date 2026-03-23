@@ -297,7 +297,7 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
                 wk[table_key][name] = new_val
                 changed = True
 
-        with col_btn:
+with col_btn:
             if st.button(
                 f"↩ {inp_def:.6g}",
                 key=reset_key,
@@ -305,10 +305,9 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
                 disabled=not modified,
             ):
                 wk[table_key][name] = inp_def
-                st.session_state.pop(wgt_key, None)
+                # Force the widget to show the default value on rerun
+                st.session_state[wgt_key] = float(inp_def)
                 changed = True
-                changed = True
-
     if changed:
         st.rerun()
 
