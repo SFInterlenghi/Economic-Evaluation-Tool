@@ -630,10 +630,54 @@ _DMA_DERIVED_OVERRIDES = [
 ]
 
 def _on_dma_change():
-    """Clear all reference-table override values and their widget keys when DMA changes."""
+    """Clear all reference-table override values AND force widget keys to
+    the new reference value so the input boxes visually update.
+    
+    We must set w_{key} to the NEW ref value (not just pop it), because
+    Streamlit's widget state can survive a pop within the same callback cycle.
+    Setting it explicitly ensures the number_input shows the updated default.
+    """
+    # Read the NEW DMA values (callback runs AFTER widget updates session_state)
+    prod = st.session_state.get("dm_prod_type", "Basic Chemical")
+    trl  = st.session_state.get("dm_trl", "Industrial (8 or 9)")
+    info = st.session_state.get("dm_info_avail", "Medium")
+    sev  = st.session_state.get("dm_severity", "Medium")
+    mat  = st.session_state.get("dm_mat_type", "Fluids")
+    office_pct_frac = OFFICE_LABOR.get(prod, 0.10)
+    maint_pct_frac  = MAINTENANCE_REPAIRS.get((mat, prod), 0.01)
+
+    # Map each override key → its new reference value (as displayed %)
+    _new_refs = {
+        "lab_charges_override":      LAB_CHARGES.get(prod, 0.10) * 100.0,
+        "office_labor_override":     OFFICE_LABOR.get(prod, 0.10) * 100.0,
+        "maint_repair_override":     MAINTENANCE_REPAIRS.get((mat, prod), 0.01) * 100.0,
+        "op_supplies_override":      OPERATING_SUPPLIES.get(sev, 0.0015) * 100.0,
+        "admin_overhead_override":   ADMIN_OVERHEAD.get(prod, 0.50) * 100.0 * (1 + office_pct_frac),
+        "mfg_overhead_override":     MFG_OVERHEAD.get(sev, 0.006) * 100.0,
+        "taxes_ins_override":        TAXES_INSURANCE.get(sev, 0.032) * 100.0,
+        "patents_roy_override":      (PATENTS_ROYALTIES.get((trl, prod)) or 0.0) * 100.0,
+        "admin_costs_override":      (1.0 + office_pct_frac) * 0.15 * 100.0,
+        "mfg_costs_override":        maint_pct_frac * 0.15 * 100.0,
+        "dist_selling_override":     DIST_SELLING.get(prod, 0.08) * 100.0,
+        "r_and_d_override":          R_AND_D.get((trl, prod), 0.02) * 100.0,
+    }
+
+    # TIC bounds use scale=1 (not ×100)
+    tic_lo = TIC_LOWER.get((trl, info))
+    tic_hi = TIC_UPPER.get((trl, info))
+    if tic_lo is not None:
+        _new_refs["tic_lower_override"] = tic_lo
+    if tic_hi is not None:
+        _new_refs["tic_upper_override"] = tic_hi
+
     for ok in _DMA_DERIVED_OVERRIDES:
         st.session_state[ok] = None
-        st.session_state.pop(f"w_{ok}", None)
+        wk = f"w_{ok}"
+        if ok in _new_refs:
+            # Force the widget to show the new reference value
+            st.session_state[wk] = float(_new_refs[ok])
+        else:
+            st.session_state.pop(wk, None)
 
 col_dm1, col_dm2, col_dm3 = st.columns(3)
 with col_dm1:
@@ -975,6 +1019,10 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
     min_value defaults to None (no lower bound) to support negative values.
     """
     stored = st.session_state.get(override_key)
+    wk = f"w_{override_key}"
+
+    # If the widget key was pre-set by _on_dma_change to the new ref,
+    # and stored override is None, use the ref_val
     current = stored if stored is not None else ref_val
     is_overridden = stored is not None and abs(stored - ref_val) > 1e-9
 
@@ -991,14 +1039,19 @@ def _overridable_number(label: str, ref_val: float, override_key: str,
             unsafe_allow_html=True,
         )
 
-    def _on_change(ok=override_key, rk=ref_val, wk=f"w_{override_key}"):
+    # Store ref_val so _on_change can compare against the CURRENT reference
+    _ref_key = f"_ref_{override_key}"
+    st.session_state[_ref_key] = ref_val
+
+    def _on_change(ok=override_key, rk_key=_ref_key, wk=wk):
+        rk = st.session_state.get(rk_key, 0.0)
         v = st.session_state.get(wk, rk)
         st.session_state[ok] = v if abs(v - rk) > 1e-9 else None
 
     return st.number_input(
         label, min_value=min_value, step=step,
         value=float(current),
-        key=f"w_{override_key}",
+        key=wk,
         label_visibility="collapsed",
         on_change=_on_change,
     )
