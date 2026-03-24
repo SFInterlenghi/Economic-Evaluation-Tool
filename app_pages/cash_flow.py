@@ -638,726 +638,595 @@ with col4:
     else:
         kpi_card("Operating margin", "Set price in Input", "#8b949e")
 # ═════════════════════════════════════════════════════════════════════════════
-# SECTION 3: FINANCIAL ANALYSIS — DETAILED CASH FLOW TABLE
+# SECTION 3: FINANCIAL ANALYSIS — UNIFIED CASH FLOW TABLE
 # ═════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.markdown("### Financial Analysis")
 st.caption(
-    "Detailed year-by-year cash flow table. "
-    "All values in USD — outflows shown as (negative), inflows as positive. "
-    "What-if overrides are applied wherever available."
+    "Year-by-year cash flow table. Outflows shown as (negative), inflows positive. "
+    "What-if overrides applied where available."
 )
 st.space("medium")
 
 from utils.constants import CAPEX_DISTRIBUTION
 
 # ─────────────────────────────────────────────────────────────────────────────
-# WHAT-IF AWARE DATA RESOLVER
-# Prefers what-if override values over saved scenario values.
-# For keys that are never overridable (e.g. EPC Years, depreciation method),
-# always reads from the saved scenario dict d.
+# WHAT-IF AWARE RESOLVER
 # ─────────────────────────────────────────────────────────────────────────────
 def _wv(key, fallback=0.0):
-    """Return what-if override if present, else saved scenario value, else fallback."""
+    """Prefer what-if override, then saved scenario value, then fallback."""
     if key in wif:
         return wif[key]
     v = d.get(key, fallback)
     return v if isinstance(v, (int, float)) else fallback
 
-# ── Project timeline (never overridable — always from saved scenario) ─────────
-epc_years        = int(safe_val(d, "EPC Years", 3))
-op_years         = int(safe_val(d, "Project Lifetime", 20))
-total_years      = epc_years + op_years
-year_of_analysis = int(d.get("Year of Analysis", 2024))
+# ─────────────────────────────────────────────────────────────────────────────
+# PROJECT TIMELINE  (structural — never overridable)
+# ─────────────────────────────────────────────────────────────────────────────
+_epc   = int(safe_val(d, "EPC Years", 3))
+_op    = int(safe_val(d, "Project Lifetime", 20))
+_total = _epc + _op
+_y0    = int(d.get("Year of Analysis", 2024))
 
-# ── Investment values (what-if aware) ────────────────────────────────────────
-capex_val       = _wv("Project CAPEX",    safe_val(d, "Project CAPEX"))
-wc_val          = _wv("Working Capital",  safe_val(d, "Working Capital"))
-startup_val     = _wv("Startup Costs",    safe_val(d, "Startup Costs"))
-isbl_osbl_val   = safe_val(d, "Project Costs ISBL+OSBL")  # not overridable
+# ─────────────────────────────────────────────────────────────────────────────
+# INVESTMENT INPUTS  (what-if aware)
+# ─────────────────────────────────────────────────────────────────────────────
+_capex   = _wv("Project CAPEX",   safe_val(d, "Project CAPEX"))
+_wc      = _wv("Working Capital", safe_val(d, "Working Capital"))
+_startup = _wv("Startup Costs",   safe_val(d, "Startup Costs"))
+_isbl    = safe_val(d, "Project Costs ISBL+OSBL")
 
-land_option_val = d.get("Land Option", "Buy")
-if land_option_val == "Buy":
-    land_buy_pct  = safe_val(d, "Land Buy Pct", 0.0)
-    land_cost_val = isbl_osbl_val * (land_buy_pct / 100.0)
-    land_rent_yr  = 0.0
+_land_opt = d.get("Land Option", "Buy")
+if _land_opt == "Buy":
+    _land_buy = _isbl * (safe_val(d, "Land Buy Pct", 0.0) / 100.0)
+    _land_rent_yr = 0.0
 else:
-    land_cost_val = 0.0
-    land_rent_pct = safe_val(d, "Land Rent Pct", 0.0)
-    land_rent_yr  = isbl_osbl_val * (land_rent_pct / 100.0)
+    _land_buy = 0.0
+    _land_rent_yr = _isbl * (safe_val(d, "Land Rent Pct", 0.0) / 100.0)
 
-# ── CAPEX distribution fractions ────────────────────────────────────────────
-_epc_col      = str(epc_years)
-_capex_series = CAPEX_DISTRIBUTION[_epc_col]
-_capex_fracs  = list(_capex_series.values)[:epc_years]
-_frac_sum     = sum(_capex_fracs)
-if _frac_sum > 0:
-    _capex_fracs = [f / _frac_sum for f in _capex_fracs]
+_epc_col    = str(_epc)
+_cap_series = CAPEX_DISTRIBUTION[_epc_col]
+_cap_fracs  = list(_cap_series.values)[:_epc]
+_fs         = sum(_cap_fracs)
+if _fs > 0:
+    _cap_fracs = [f / _fs for f in _cap_fracs]
 
-# ── Revenue inputs (what-if aware) ──────────────────────────────────────────
-prod_unit_val   = d.get("Unit", "")
-wif_cap         = _wv("Capacity",              safe_val(d, "Capacity"))
-wif_wh          = _wv("Working Hours per Year", safe_val(d, "Working Hours per Year", 8000.0))
-main_price_val  = safe_val(d, "Main Product Price", 0.0)  # selling price — from input only
+# ─────────────────────────────────────────────────────────────────────────────
+# REVENUE INPUTS  (what-if aware)
+# ─────────────────────────────────────────────────────────────────────────────
+_prod_unit   = d.get("Unit", "")
+_wif_cap     = _wv("Capacity",               safe_val(d, "Capacity"))
+_wif_wh      = _wv("Working Hours per Year", safe_val(d, "Working Hours per Year", 8000.0))
+_main_price  = safe_val(d, "Main Product Price", 0.0)
 
-# Byproduct base revenue at full capacity, op year 0 (no growth yet)
-# Recompute from scenario items using what-if capacity
-_cb_items = d.get("Credits and Byproducts", []) or []
-_bp_base_rev = 0.0
-for _r in _cb_items:
-    if not _r.get("Name"):
+_bp_base = 0.0
+for _r in (d.get("Credits and Byproducts", []) or []):
+    if not _r.get("Name"): continue
+    _rate = float(_r.get("Rate", 0.0)); _price = float(_r.get("Price", 0.0))
+    _bp_base += _price * _rate * (1.0 if is_per_year(_r.get("Rate Unit","")) else _wif_wh)
+
+_cap_first = safe_val(d, "Capacity First Year",    100.0) / 100.0
+_cap_inter = safe_val(d, "Capacity Intermediate",  100.0) / 100.0
+_cap_last  = safe_val(d, "Capacity Last Year",     100.0) / 100.0
+_fc_first  = safe_val(d, "Fixed Costs First Year", 100.0) / 100.0
+_fc_inter  = safe_val(d, "Fixed Costs Intermediate",100.0)/ 100.0
+_fc_last   = safe_val(d, "Fixed Costs Last Year",  100.0) / 100.0
+
+def _cpct(oi):
+    return _cap_first if oi==0 else (_cap_last if oi==_op-1 else _cap_inter)
+def _fpct(oi):
+    return _fc_first  if oi==0 else (_fc_last  if oi==_op-1 else _fc_inter)
+
+_g_main   = safe_val(d, "Growth Main Price",      0.0) / 100.0
+_g_byprod = safe_val(d, "Growth Byproduct Price", 0.0) / 100.0
+_g_rm     = safe_val(d, "Growth Raw Materials",   0.0) / 100.0
+_g_cu     = safe_val(d, "Growth Chem Utilities",  0.0) / 100.0
+_g_fc     = safe_val(d, "Growth Fixed Costs",     0.0) / 100.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RESIDUAL VALUE & DEPRECIATION
+# ─────────────────────────────────────────────────────────────────────────────
+_resid_pct  = safe_val(d, "Residual Value Pct", 20.0) / 100.0
+_resid_usd  = _capex * _resid_pct
+_dep_method = d.get("Depreciation Method", "Straight Line")
+_dep_yrs    = int(safe_val(d, "Depreciation Years", 10))
+_dep_sl     = -(_capex - _resid_usd) / _dep_yrs if _dep_yrs > 0 else 0.0
+
+_MACRS = {
+    3:  [0.3333,0.4445,0.1481,0.0741],
+    5:  [0.2000,0.3200,0.1920,0.1152,0.1152,0.0576],
+    7:  [0.1429,0.2449,0.1749,0.1249,0.0893,0.0892,0.0893,0.0446],
+    10: [0.1000,0.1800,0.1440,0.1152,0.0922,0.0737,0.0655,0.0655,0.0656,0.0655,0.0328],
+    15: [0.0500,0.0950,0.0855,0.0770,0.0693,0.0623,0.0590,0.0590,0.0591,0.0590,
+         0.0591,0.0590,0.0591,0.0590,0.0591,0.0295],
+    20: [0.0375,0.0722,0.0668,0.0618,0.0571,0.0528,0.0489,0.0452,0.0446,0.0446,
+         0.0446,0.0446,0.0446,0.0446,0.0446,0.0446,0.0446,0.0446,0.0446,0.0446,0.0223],
+}
+_mk   = min(_MACRS.keys(), key=lambda k: abs(k - _dep_yrs))
+_mrat = _MACRS[_mk]
+
+def _dep(oi):
+    if _dep_method == "Straight Line":
+        return _dep_sl if oi < _dep_yrs else 0.0
+    return (-_capex * _mrat[oi]) if oi < len(_mrat) else 0.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OPEX COMPONENTS  (what-if aware — pull from Section 2 computed values)
+# ─────────────────────────────────────────────────────────────────────────────
+_cap_ratio = _wif_cap / safe_val(d, "Capacity", _wif_cap) if safe_val(d, "Capacity", 1.0) > 0 else 1.0
+_rm_base   = safe_val(d, "Total Raw Material Cost",         0.0) * _cap_ratio
+_cu_base   = safe_val(d, "Total Chemical Inputs Utilities", 0.0) * _cap_ratio
+_lab_base  = wif_labor
+_sm_base   = wif_supply_maint
+_afc_base  = wif_afc
+_ifc_base  = wif_indirect
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINANCING  (structural — never overridable)
+# ─────────────────────────────────────────────────────────────────────────────
+_fin_type   = d.get("Financing Type", "None")
+_leveraged  = _fin_type == "Straight Line"
+_debt_ratio = safe_val(d, "Debt Ratio", 0.0)
+_tot_debt   = _capex * _debt_ratio
+_amort_yrs  = int(safe_val(d, "Amortization Years", 13))
+_grace_yrs  = int(safe_val(d, "Grace Period Years",  5))
+_cod        = safe_val(d, "COD", 0.0)
+if _cod > 1.0: _cod /= 100.0
+_ann_repay  = _tot_debt / _amort_yrs if (_leveraged and _amort_yrs > 0) else 0.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TAX & MARR
+# ─────────────────────────────────────────────────────────────────────────────
+_tax  = safe_val(d, "Tax Rate", 0.34)
+if _tax  > 1.0: _tax  /= 100.0
+_marr = safe_val(d, "MARR", 0.12)
+if _marr > 1.0: _marr /= 100.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPUTE ALL COLUMNS  (single pass)
+# ─────────────────────────────────────────────────────────────────────────────
+# Index
+T_cal  = [str(_y0 + i) for i in range(_total)]
+T_proj = [str(i)       for i in range(_total)]
+T_op   = ["—"] * _epc + [str(j) for j in range(1, _op + 1)]
+
+# Module arrays — None = not applicable (EPC row for income statement cols)
+I_capex=[]; I_wc=[]; I_su=[]; I_land=[]; I_tot=[]
+R_main=[]; R_bp=[]; R_cc=[]; R_resid=[]; R_tot=[]
+E_rm=[]; E_cu=[]; E_carb=[]; E_lab=[]; E_sm=[]; E_afc=[]; E_ifc=[]; E_rent=[]; E_tot=[]
+F_debt=[]; F_amort=[]; F_accum=[]; F_int=[]; F_tot=[]
+C_rev=[]; C_vl=[]; C_gp=[]; C_fix=[]; C_ebitda=[]; C_dep=[]
+C_ebit=[]; C_fint=[]; C_ebt=[]; C_tax=[]; C_np=[]
+C_amort=[]; C_inv=[]; C_cf=[]; C_pvcf=[]; C_acpv=[]
+
+_accum_debt = 0.0
+_accum_pv   = 0.0
+
+for i in range(_total):
+    oi = i - _epc       # operational index (negative during EPC)
+    epc = i < _epc
+
+    # ── INVESTMENT ──────────────────────────────────────────────────────────
+    i_cap  = -_capex * _cap_fracs[i] if epc else 0.0
+    i_wc   = (-_wc if i == _epc - 1
+               else (+_wc if oi == _op - 1 else 0.0))
+    i_su   = -_startup if oi == 0 else 0.0
+    i_land = -_land_buy if i == 0 else 0.0
+    i_tot  = i_cap + i_wc + i_su + i_land
+    I_capex.append(i_cap); I_wc.append(i_wc); I_su.append(i_su)
+    I_land.append(i_land); I_tot.append(i_tot)
+
+    # ── FINANCING ────────────────────────────────────────────────────────────
+    f_debt  = (_tot_debt * _cap_fracs[i]) if (epc and _leveraged) else 0.0
+    _accum_debt += f_debt
+    f_int   = -_accum_debt * _cod if _leveraged else 0.0
+    f_amort = (-_ann_repay
+               if (_leveraged and oi >= _grace_yrs
+                   and (oi - _grace_yrs) < _amort_yrs)
+               else 0.0)
+    _accum_debt += f_amort
+    f_accum = _accum_debt
+    f_tot   = f_amort + f_int
+    F_debt.append(f_debt); F_amort.append(f_amort); F_accum.append(f_accum)
+    F_int.append(f_int);   F_tot.append(f_tot)
+
+    if epc:
+        # Revenue & Expenses — not applicable during EPC
+        for lst in [R_main,R_bp,R_cc,R_resid,R_tot]: lst.append(None)
+        for lst in [E_rm,E_cu,E_carb,E_lab,E_sm,E_afc,E_ifc,E_rent,E_tot]: lst.append(None)
+        # Cash Flow income statement — not applicable during EPC
+        for lst in [C_rev,C_vl,C_gp,C_fix,C_ebitda,C_dep,
+                    C_ebit,C_ebt,C_tax,C_np]: lst.append(None)
+        C_fint.append(f_int); C_amort.append(f_amort); C_inv.append(i_tot)
+        cf_i  = i_tot + f_int + f_amort
+        pv_i  = cf_i / (1 + _marr) ** i
+        _accum_pv += pv_i
+        C_cf.append(cf_i); C_pvcf.append(pv_i); C_acpv.append(_accum_pv)
         continue
-    _rate  = float(_r.get("Rate", 0.0))
-    _price = float(_r.get("Price", 0.0))
-    _ru    = _r.get("Rate Unit", "")
-    # Use working hours scaling consistent with the rest of the tool
-    if is_per_year(_ru):
-        _bp_base_rev += _price * _rate
-    else:
-        _bp_base_rev += _price * _rate * wif_wh
 
-# ── Capacity / fixed-cost schedule ──────────────────────────────────────────
-# 3-bucket: first op year / intermediate / last op year (as fractions 0–1)
-cap_first = safe_val(d, "Capacity First Year",       100.0) / 100.0
-cap_inter = safe_val(d, "Capacity Intermediate",     100.0) / 100.0
-cap_last  = safe_val(d, "Capacity Last Year",        100.0) / 100.0
-fc_first  = safe_val(d, "Fixed Costs First Year",    100.0) / 100.0
-fc_inter  = safe_val(d, "Fixed Costs Intermediate",  100.0) / 100.0
-fc_last   = safe_val(d, "Fixed Costs Last Year",     100.0) / 100.0
+    # ── REVENUE ──────────────────────────────────────────────────────────────
+    cp = _cpct(oi)
+    r_main  =  _main_price * _wif_cap * cp * (1 + _g_main)   ** oi
+    r_bp    =  _bp_base    * cp        * (1 + _g_byprod) ** oi
+    r_cc    =  0.0                       # carbon credits — future-proof
+    r_resid =  _resid_usd if oi == _op - 1 else 0.0
+    r_tot   =  r_main + r_bp + r_cc + r_resid
+    R_main.append(r_main); R_bp.append(r_bp); R_cc.append(r_cc)
+    R_resid.append(r_resid); R_tot.append(r_tot)
 
-def _cap_pct(op_idx):
-    if op_idx == 0:              return cap_first
-    elif op_idx == op_years - 1: return cap_last
-    else:                        return cap_inter
+    # ── EXPENSES ─────────────────────────────────────────────────────────────
+    fp = _fpct(oi)
+    g_rm_f = (1+_g_rm)**oi; g_cu_f = (1+_g_cu)**oi; g_fc_f = (1+_g_fc)**oi
+    e_rm   = -(_rm_base  * cp * g_rm_f)
+    e_cu   = -(_cu_base  * cp * g_cu_f)
+    e_carb = 0.0
+    e_lab  = -(_lab_base * fp * g_fc_f)
+    e_sm   = -(_sm_base  * fp * g_fc_f)
+    e_afc  = -(_afc_base * fp * g_fc_f)
+    e_ifc  = -(_ifc_base * fp * g_fc_f)
+    e_rent = -(_land_rent_yr * g_fc_f) if _land_opt == "Rent" else 0.0
+    e_tot  = e_rm+e_cu+e_carb+e_lab+e_sm+e_afc+e_ifc+e_rent
+    E_rm.append(e_rm); E_cu.append(e_cu); E_carb.append(e_carb)
+    E_lab.append(e_lab); E_sm.append(e_sm); E_afc.append(e_afc)
+    E_ifc.append(e_ifc); E_rent.append(e_rent); E_tot.append(e_tot)
 
-def _fc_pct(op_idx):
-    if op_idx == 0:              return fc_first
-    elif op_idx == op_years - 1: return fc_last
-    else:                        return fc_inter
+    # ── CASH FLOW INCOME STATEMENT ────────────────────────────────────────────
+    c_rev    = r_tot
+    c_vl     = e_rm + e_cu + e_carb + e_lab
+    c_gp     = c_rev + c_vl
+    c_fix    = e_sm + e_afc + e_ifc + e_rent
+    c_ebitda = c_gp + c_fix
+    c_dep    = _dep(oi)
+    c_ebit   = c_ebitda + c_dep
+    c_fint   = f_int
+    c_ebt    = c_ebit + c_fint
+    c_tax    = -max(0.0, c_ebt) * _tax
+    c_np     = c_ebt + c_tax
+    c_amort  = f_amort
+    c_inv    = i_tot
+    cf_i     = c_np + c_amort + c_inv
+    pv_i     = cf_i / (1 + _marr) ** i
+    _accum_pv += pv_i
 
-# ── Annual growth rates ──────────────────────────────────────────────────────
-g_main   = safe_val(d, "Growth Main Price",        0.0) / 100.0
-g_byprod = safe_val(d, "Growth Byproduct Price",   0.0) / 100.0
-g_rm     = safe_val(d, "Growth Raw Materials",     0.0) / 100.0
-g_cu     = safe_val(d, "Growth Chem Utilities",    0.0) / 100.0
-g_fc     = safe_val(d, "Growth Fixed Costs",       0.0) / 100.0
+    C_rev.append(c_rev); C_vl.append(c_vl); C_gp.append(c_gp)
+    C_fix.append(c_fix); C_ebitda.append(c_ebitda); C_dep.append(c_dep)
+    C_ebit.append(c_ebit); C_fint.append(c_fint); C_ebt.append(c_ebt)
+    C_tax.append(c_tax); C_np.append(c_np); C_amort.append(c_amort)
+    C_inv.append(c_inv); C_cf.append(cf_i); C_pvcf.append(pv_i)
+    C_acpv.append(_accum_pv)
 
-# ── Depreciation (never overridable) ────────────────────────────────────────
-dep_method        = d.get("Depreciation Method", "Straight Line")
-dep_years         = int(safe_val(d, "Depreciation Years", 10))
-# Residual value: always recomputed from what-if CAPEX × saved residual_value_pct.
-# Applies to both Straight Line and MACRS — method only affects the depreciation
-# schedule (handled in the depreciation module), not the terminal residual value.
-residual_val_pct = safe_val(d, "Residual Value Pct", 20.0) / 100.0
-residual_val_usd = capex_val * residual_val_pct   # capex_val is already what-if aware
-
-# ── OPEX components (what-if aware) — used in expenses module ───────────────
-# Variable cost base at full capacity (from tvc_net computed in Section 1)
-# Split RM and CU proportionally from saved totals
-_rm_saved  = safe_val(d, "Total Raw Material Cost",         0.0)
-_cu_saved  = safe_val(d, "Total Chemical Inputs Utilities", 0.0)
-_tvc_saved = _rm_saved + _cu_saved
-# Scale to what-if capacity if capacity was overridden
-_cap_ratio = wif_cap / safe_val(d, "Capacity", wif_cap) if safe_val(d, "Capacity", 1.0) > 0 else 1.0
-_rm_base   = _rm_saved * _cap_ratio
-_cu_base   = _cu_saved * _cap_ratio
-
-# Fixed cost components — what-if aware
-_labor_base   = wif_labor        # from Section 2 what-if solve
-_sm_base      = wif_supply_maint
-_afc_base     = wif_afc
-_indirect_base= wif_indirect
-
-# ── Financing (never overridable) ───────────────────────────────────────────
-financing_type  = d.get("Financing Type", "None")
-is_leveraged    = financing_type == "Straight Line"
-debt_ratio_val  = safe_val(d, "Debt Ratio", 0.0)
-total_debt      = capex_val * debt_ratio_val
-amort_years     = int(safe_val(d, "Amortization Years", 13))
-grace_years     = int(safe_val(d, "Grace Period Years",  5))
-cod_val         = safe_val(d, "COD", 0.0) / 100.0  # already fraction? check
-# COD is stored as fraction in scenario (e.g. 0.0742), verify
-if cod_val > 1.0:
-    cod_val = cod_val / 100.0  # safety: convert if stored as %
+_npv = _accum_pv
 
 # ─────────────────────────────────────────────────────────────────────────────
-# YEAR INDEX ARRAYS
+# COLUMN REGISTRY — maps module → list of (header, array, is_subtotal)
 # ─────────────────────────────────────────────────────────────────────────────
-calendar_years  = [year_of_analysis + i for i in range(total_years)]
-proj_year_idx   = list(range(total_years))
-op_year_labels  = ["—"] * epc_years + list(range(1, op_years + 1))
+_INV_COLS = [
+    ("CAPEX",           I_capex, False),
+    ("Working Capital", I_wc,    False),
+    ("Start-up",        I_su,    False),
+    ("Land Purchase",   I_land,  False),
+    ("Inv. Total",      I_tot,   True),
+]
+_REV_COLS = [
+    ("Main Product",    R_main,  False),
+    ("Byproducts",      R_bp,    False),
+    ("Carbon Credits",  R_cc,    False),
+    ("Residual Value",  R_resid, False),
+    ("Rev. Total",      R_tot,   True),
+]
+_EXP_COLS = [
+    ("Raw Materials",   E_rm,    False),
+    ("Chem. & Util.",   E_cu,    False),
+    ("Carbon Costs",    E_carb,  False),
+    ("Labor",           E_lab,   False),
+    ("Supply & Maint.", E_sm,    False),
+    ("AFC",             E_afc,   False),
+    ("Indirect Fixed",  E_ifc,   False),
+    ("Land Rent",       E_rent,  False),
+    ("Exp. Total",      E_tot,   True),
+]
+_FIN_COLS = [
+    ("Debt Drawdown",   F_debt,  False),
+    ("Amortization",    F_amort, False),
+    ("Accum. Debt",     F_accum, False),
+    ("Interest",        F_int,   False),
+    ("Fin. Total",      F_tot,   True),
+]
+_CF_COLS = [
+    ("Revenue",         C_rev,    False),
+    ("Var. & Labor",    C_vl,     False),
+    ("Gross Profit",    C_gp,     True),
+    ("Fixed Costs",     C_fix,    False),
+    ("EBITDA",          C_ebitda, True),
+    ("Depreciation",    C_dep,    False),
+    ("EBIT",            C_ebit,   True),
+    ("Fin. Interest",   C_fint,   False),
+    ("EBT",             C_ebt,    True),
+    ("Taxes",           C_tax,    False),
+    ("Net Profit",      C_np,     True),
+    ("Amortization",    C_amort,  False),
+    ("Proj. Investment",C_inv,    False),
+    ("Cash Flow",       C_cf,     True),
+    ("Present CF",      C_pvcf,   False),
+    ("Accum. PV CF",    C_acpv,   True),
+]
 
-col_calendar  = [str(y) for y in calendar_years]
-col_proj_year = [str(i) for i in proj_year_idx]
-col_op_year   = [str(v) for v in op_year_labels]
+_MODULE_MAP = {
+    "Investment": _INV_COLS,
+    "Revenue":    _REV_COLS,
+    "Expenses":   _EXP_COLS,
+    "Financing":  _FIN_COLS,
+    "Cash Flow":  _CF_COLS,
+}
+_MODULE_COLORS = {
+    "Investment": "#e6a817",
+    "Revenue":    "#3fb950",
+    "Expenses":   "#f85149",
+    "Financing":  "#58a6ff",
+    "Cash Flow":  "#58a6ff",
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# FORMATTING HELPERS (shared across all modules)
+# FORMATTING HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
-def _fmt_val(v):
-    if v == 0.0:
+def _fv(v):
+    """Format a single value. None → '—'. 0 → '—'. Neg → (x). Pos → x."""
+    if v is None or v == 0.0:
         return "—"
-    abs_v = abs(v)
-    if abs_v >= 1_000_000:
-        s = f"{abs_v / 1_000_000:.3f}M"
-    elif abs_v >= 1_000:
-        s = f"{abs_v / 1_000:.1f}k"
-    else:
-        s = f"{abs_v:,.2f}"
+    a = abs(v)
+    s = (f"{a/1_000_000:.3f}M" if a >= 1_000_000
+         else f"{a/1_000:.1f}k" if a >= 1_000
+         else f"{a:,.2f}")
     return f"({s})" if v < 0 else s
 
-def _fmt_col(values):
-    return [_fmt_val(v) for v in values]
+def _cc(vs):
+    """Cell color from formatted string."""
+    if vs in ("—", ""): return "#30363d"
+    return "#f85149" if vs.startswith("(") else "#3fb950"
 
-def _cell_color(val_str):
-    if val_str == "—":
-        return "#30363d"
-    if val_str.startswith("("):
-        return "#f85149"
-    return "#3fb950"
+# ─────────────────────────────────────────────────────────────────────────────
+# PER-MODULE KPI SECTIONS
+# ─────────────────────────────────────────────────────────────────────────────
+section_header("Financial Analysis — Overview", "#58a6ff")
 
-def _html_cf_table(headers, col_arrays, epc_count, total_col_idx=None, accent_col_idxs=None):
-    """Shared styled HTML cash flow table renderer."""
-    accent_col_idxs = accent_col_idxs or []
-    th_base = (
-        "padding:.45rem .8rem;font-size:.74rem;letter-spacing:.04em;"
+# Investment KPIs
+with st.expander("**Investment**", expanded=False, icon=":material/account_balance:"):
+    k1,k2,k3,k4 = st.columns(4)
+    with k1: kpi_card("Project CAPEX",   smart_fmt(_capex),   "#58a6ff", f"Over {_epc} EPC yr(s)", "distributed")
+    with k2: kpi_card("Working Capital", smart_fmt(_wc),      "#79c0ff", "Recovery", f"Op. year {_op}")
+    with k3: kpi_card("Start-up Costs",  smart_fmt(_startup), "#3fb950", "Timing",   "Op. year 1")
+    with k4:
+        if _land_opt == "Buy":
+            kpi_card("Land Purchase", smart_fmt(_land_buy), "#e6a817", "Timing", "Year 0")
+        else:
+            kpi_card("Land Rent", smart_fmt(_land_rent_yr)+"/yr", "#8b949e", "In", "Expenses")
+
+# Revenue KPIs
+with st.expander("**Revenue**", expanded=False, icon=":material/trending_up:"):
+    r1,r2,r3 = st.columns(3)
+    with r1: kpi_card("Main Product Price",
+                      f"${_main_price:,.2f}/{_prod_unit}" if _main_price else "Not set", "#3fb950")
+    with r2: kpi_card("Total Revenue (undiscounted)",
+                      smart_fmt(sum(v for v in R_tot if v)), "#58a6ff")
+    with r3: kpi_card("Residual Value", smart_fmt(_resid_usd), "#e6a817", "Method", _dep_method)
+    if not _main_price:
+        st.warning("Main product price not set — set it in Input Data → Other Premises.",
+                   icon=":material/warning:")
+
+# Expenses KPIs
+with st.expander("**Expenses**", expanded=False, icon=":material/payments:"):
+    e1,e2,e3 = st.columns(3)
+    with e1: kpi_card("Total Expenses (undiscounted)",
+                      smart_fmt(abs(sum(v for v in E_tot if v is not None))), "#f85149")
+    with e2: kpi_card("Variable Cost Base",
+                      smart_fmt(abs(sum(v for v in E_rm if v is not None)
+                                  + sum(v for v in E_cu if v is not None))), "#ff7b72")
+    with e3: kpi_card("Fixed Cost Base",
+                      smart_fmt(abs(sum(v for v in E_sm if v is not None)
+                                  + sum(v for v in E_afc if v is not None)
+                                  + sum(v for v in E_ifc if v is not None))), "#ffa657")
+
+# Financing KPIs
+with st.expander("**Financing**", expanded=False, icon=":material/credit_card:"):
+    if not _leveraged:
+        st.info("No financing configured (Financing Type = None).", icon=":material/info:")
+    else:
+        f1,f2,f3 = st.columns(3)
+        with f1: kpi_card("Total Debt", smart_fmt(_tot_debt), "#58a6ff",
+                          "Ratio", f"{safe_val(d,'Debt Ratio Pct'):.1f}% of CAPEX")
+        with f2: kpi_card("Amortization", f"{_amort_yrs} years", "#79c0ff",
+                          "Grace", f"{_grace_yrs} years")
+        with f3: kpi_card("Cost of Debt (COD)", f"{_cod*100:.2f}%", "#e6a817")
+
+# Cash Flow KPIs
+with st.expander("**Cash Flow**", expanded=True, icon=":material/account_balance_wallet:"):
+    npv_color = "#3fb950" if _npv >= 0 else "#f85149"
+    c1,c2,c3,c4 = st.columns(4)
+    with c1: kpi_card("NPV", smart_fmt(_npv), npv_color,
+                      "MARR", f"{_marr*100:.2f}%")
+    with c2: kpi_card("Depreciation", _dep_method, "#8b949e",
+                      "Period", f"{_dep_yrs} yrs")
+    with c3: kpi_card("Tax Rate", f"{_tax*100:.1f}%", "#8b949e",
+                      "Country", d.get("Tax Country", "—"))
+    with c4:
+        _peak_i   = I_tot.index(min(I_tot))
+        kpi_card("Peak Investment", smart_fmt(abs(min(I_tot))), "#e6a817",
+                 "Year", str(_peak_i))
+
+st.space("medium")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COLUMN SELECTOR — st.pills
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("#### Detailed Cash Flow Table")
+st.caption("Select modules to display as column groups. Index columns always visible.")
+
+_all_modules = ["Investment", "Revenue", "Expenses", "Financing", "Cash Flow"]
+
+# Hide Financing pill if not leveraged
+_available = [m for m in _all_modules if not (m == "Financing" and not _leveraged)]
+
+_selected = st.pills(
+    "Visible modules",
+    options=_available,
+    selection_mode="multi",
+    default=["Cash Flow"],
+    key="fin_module_pills",
+    label_visibility="collapsed",
+)
+
+if not _selected:
+    st.info("Select at least one module above to display the table.", icon=":material/table:")
+    st.stop()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILD SELECTED COLUMN LIST
+# ─────────────────────────────────────────────────────────────────────────────
+_active_cols = []   # list of (header, formatted_array, is_subtotal, module_name)
+for mod in _all_modules:
+    if mod not in _selected:
+        continue
+    for (hdr, arr, is_sub) in _MODULE_MAP[mod]:
+        _active_cols.append((hdr, [_fv(v) for v in arr], is_sub, mod))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HTML TABLE RENDERER — unified, sticky index, colored module headers
+# ─────────────────────────────────────────────────────────────────────────────
+def _render_unified_table(active_cols, epc_count, total_rows):
+    # ── Column header row with module color bands ─────────────────────────────
+    th_idx = (
+        "padding:.5rem .9rem;font-size:.73rem;letter-spacing:.04em;"
         "white-space:nowrap;border-bottom:2px solid #21262d;background:#0d1117;"
+        "text-align:left;color:#8b949e;position:sticky;left:0;z-index:3;"
     )
-    head_cells = []
-    for j, h in enumerate(headers):
-        align = "left" if j < 3 else "right"
-        head_cells.append(
-            f'<th style="{th_base}text-align:{align};color:#8b949e;">{h}</th>'
+    th_val_base = (
+        "padding:.5rem .8rem;font-size:.73rem;letter-spacing:.04em;"
+        "white-space:nowrap;border-bottom:2px solid #21262d;background:#0d1117;"
+        "text-align:right;color:#8b949e;"
+    )
+
+    # Group header row (module color bands)
+    _prev_mod   = None
+    _mod_spans  = []   # (module_name, col_count)
+    for _, _, _, mod in active_cols:
+        if mod != _prev_mod:
+            _mod_spans.append([mod, 1])
+            _prev_mod = mod
+        else:
+            _mod_spans[-1][1] += 1
+
+    grp_cells = (
+        f'<th colspan="3" style="{th_idx}border-bottom:1px solid #21262d;'
+        f'color:#484f58;font-size:.68rem"></th>'
+    )
+    for mod_name, span in _mod_spans:
+        mc = _MODULE_COLORS.get(mod_name, "#8b949e")
+        grp_cells += (
+            f'<th colspan="{span}" style="padding:.3rem .8rem;font-size:.68rem;'
+            f'text-align:center;background:#0d1117;color:{mc};'
+            f'border-bottom:1px solid {mc};border-left:2px solid {mc};'
+            f'letter-spacing:.06em;white-space:nowrap;">'
+            f'{mod_name.upper()}</th>'
         )
 
+    # Column header row
+    idx_hdrs = ["Calendar Year", "Proj. Year", "Op. Year"]
+    col_cells = ""
+    for h in idx_hdrs:
+        col_cells += f'<th style="{th_idx}">{h}</th>'
+    for j, (hdr, _, is_sub, mod) in enumerate(active_cols):
+        mc   = _MODULE_COLORS.get(mod, "#8b949e")
+        fw   = "font-weight:600;" if is_sub else ""
+        bdr  = f"border-left:2px solid {mc};" if (j == 0 or active_cols[j-1][3] != mod) else ""
+        col_cells += (
+            f'<th style="{th_val_base}{fw}{bdr}">{hdr}</th>'
+        )
+
+    # ── Data rows ──────────────────────────────────────────────────────────────
     rows_html = []
-    for i in range(total_years):
+    for i in range(total_rows):
         is_epc = i < epc_count
         bg     = "#0d1117" if is_epc else "#161b22"
-        cells_html = []
-        for j, col in enumerate(col_arrays):
-            val        = col[i]
-            is_total   = total_col_idx is not None and j == total_col_idx
-            is_accent  = j in accent_col_idxs
-            if j < 3:
-                color = "#484f58" if is_epc else "#6e7681"
-                align = "left" if j == 0 else "center"
-                td    = (
-                    f"padding:.3rem .8rem;text-align:{align};"
-                    f"font-size:.78rem;color:{color};"
-                )
-            else:
-                color = _cell_color(str(val))
-                fw    = "font-weight:600;" if (is_total or is_accent) else ""
-                bdr   = "border-left:1px solid #21262d;" if is_total else ""
-                td    = (
-                    f"padding:.3rem .8rem;text-align:right;"
-                    f"font-family:DM Mono,monospace;font-size:.78rem;"
-                    f"color:{color};{fw}{bdr}"
-                )
-            cells_html.append(f'<td style="{td}">{val}</td>')
+
+        # Index cells — sticky left
+        idx_vals = [T_cal[i], T_proj[i], T_op[i]]
+        idx_color = "#484f58" if is_epc else "#6e7681"
+        row_cells = ""
+        for j, v in enumerate(idx_vals):
+            align = "left" if j == 0 else "center"
+            sticky = ("position:sticky;left:0;z-index:1;"
+                      f"background:{bg};" if j == 0 else "")
+            row_cells += (
+                f'<td style="padding:.3rem .9rem;font-size:.77rem;'
+                f'text-align:{align};color:{idx_color};{sticky}">{v}</td>'
+            )
+
+        # Value cells
+        for j, (hdr, fmt_arr, is_sub, mod) in enumerate(active_cols):
+            vs   = fmt_arr[i]
+            mc   = _MODULE_COLORS.get(mod, "#8b949e")
+            fc   = _cc(vs)
+            fw   = "font-weight:600;" if is_sub else ""
+            bdr  = f"border-left:2px solid {mc}22;" if (j == 0 or active_cols[j-1][3] != mod) else ""
+            row_cells += (
+                f'<td style="padding:.3rem .8rem;text-align:right;'
+                f'font-family:DM Mono,monospace;font-size:.77rem;'
+                f'color:{fc};{fw}{bdr}">{vs}</td>'
+            )
 
         rows_html.append(
             f'<tr style="background:{bg};border-bottom:1px solid #1c2128;">'
-            + "".join(cells_html) + "</tr>"
+            + row_cells + "</tr>"
         )
 
     return (
-        '<div style="overflow-x:auto;max-height:540px;overflow-y:auto;'
+        '<div style="overflow-x:auto;max-height:580px;overflow-y:auto;'
         'border:1px solid #21262d;border-radius:6px;">'
         "<table style='width:100%;border-collapse:collapse;'>"
         "<thead style='position:sticky;top:0;z-index:2;'>"
-        f"<tr>{''.join(head_cells)}</tr></thead>"
+        f"<tr>{grp_cells}</tr>"
+        f"<tr>{col_cells}</tr>"
+        "</thead>"
         f"<tbody>{''.join(rows_html)}</tbody>"
         "</table></div>"
     )
 
-def _footer_totals(col_names, col_values):
-    """Render a row of column-total KPI chips."""
-    cols_ui = st.columns(len(col_names))
-    for col_ui, lbl, val in zip(cols_ui, col_names, col_values):
+st.markdown(
+    _render_unified_table(_active_cols, _epc, _total),
+    unsafe_allow_html=True,
+)
+
+# ── Footer totals for selected columns ────────────────────────────────────────
+st.space("small")
+st.caption("Column totals — operational years only")
+_op_totals_names  = []
+_op_totals_values = []
+for (hdr, arr, _, mod) in _active_cols:
+    raw = _MODULE_MAP[mod]
+    raw_arr = next(a for (h,a,_) in raw if h == hdr)
+    val = sum(v for v in raw_arr[_epc:] if v is not None)
+    _op_totals_names.append(hdr)
+    _op_totals_values.append(val)
+
+# Render in rows of 6 to avoid overcrowding
+_chunk = 6
+for start in range(0, len(_op_totals_names), _chunk):
+    _ns = _op_totals_names[start:start+_chunk]
+    _vs = _op_totals_values[start:start+_chunk]
+    cols_ui = st.columns(len(_ns))
+    for col_ui, lbl, val in zip(cols_ui, _ns, _vs):
         with col_ui:
             color = "#f85149" if val < 0 else ("#3fb950" if val > 0 else "#8b949e")
             st.markdown(
-                f'<div style="text-align:center;padding:.4rem;'
+                f'<div style="text-align:center;padding:.35rem .2rem;'
                 f'background:#161b22;border-radius:4px;">'
-                f'<p style="font-size:.68rem;color:#6e7681;margin:0 0 .15rem 0">{lbl}</p>'
-                f'<p style="font-size:.86rem;font-family:DM Mono,monospace;'
-                f'color:{color};font-weight:600;margin:0">{_fmt_val(val)}</p>'
+                f'<p style="font-size:.66rem;color:#6e7681;margin:0 0 .1rem 0;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{lbl}</p>'
+                f'<p style="font-size:.84rem;font-family:DM Mono,monospace;'
+                f'color:{color};font-weight:600;margin:0">{_fv(val)}</p>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MODULE 1: INVESTMENT
-# ─────────────────────────────────────────────────────────────────────────────
-inv_capex, inv_wc, inv_startup, inv_land, inv_total = [], [], [], [], []
-
-for i in range(total_years):
-    op_idx     = i - epc_years
-    capex_row  = -capex_val * _capex_fracs[i] if i < epc_years else 0.0
-    if i == epc_years - 1:
-        wc_row = -wc_val
-    elif op_idx == op_years - 1:
-        wc_row = +wc_val
-    else:
-        wc_row = 0.0
-    startup_row = -startup_val if op_idx == 0 else 0.0
-    land_row    = -land_cost_val if i == 0 else 0.0
-    inv_capex.append(capex_row); inv_wc.append(wc_row)
-    inv_startup.append(startup_row); inv_land.append(land_row)
-    inv_total.append(capex_row + wc_row + startup_row + land_row)
-
-section_header("Module 1 — Investment", "#e6a817")
-k1, k2, k3, k4 = st.columns(4)
-with k1: kpi_card("Project CAPEX",   smart_fmt(capex_val),   "#58a6ff", f"Over {epc_years} EPC yr(s)", "CAPEX table")
-with k2: kpi_card("Working Capital", smart_fmt(wc_val),      "#79c0ff", "Recovery", f"Op. year {op_years}")
-with k3: kpi_card("Start-up Costs",  smart_fmt(startup_val), "#3fb950", "Timing",   "Op. year 1")
-with k4:
-    if land_option_val == "Buy":
-        kpi_card("Land Purchase", smart_fmt(land_cost_val), "#e6a817", "Timing", "Year 0")
-    else:
-        kpi_card("Land", "Rent", "#8b949e", "Expense", "in expenses module")
-
-st.space("small")
-if st.toggle("Show investment detail", key="tog_inv"):
-    st.markdown(
-        _html_cf_table(
-            ["Calendar Year", "Proj. Year", "Op. Year",
-             "CAPEX", "Working Capital", "Start-up", "Land Purchase", "TOTAL"],
-            [col_calendar, col_proj_year, col_op_year,
-             _fmt_col(inv_capex), _fmt_col(inv_wc),
-             _fmt_col(inv_startup), _fmt_col(inv_land), _fmt_col(inv_total)],
-            epc_years, total_col_idx=7
-        ), unsafe_allow_html=True,
-    )
-    st.space("small")
-    st.caption("Column totals")
-    _footer_totals(
-        ["CAPEX", "Working Capital", "Start-up", "Land", "TOTAL"],
-        [sum(inv_capex), sum(inv_wc), sum(inv_startup), sum(inv_land), sum(inv_total)]
-    )
-
 st.space("medium")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MODULE 2: REVENUE
-# ─────────────────────────────────────────────────────────────────────────────
-rev_main, rev_byprod, rev_carbon, rev_residual, rev_total = [], [], [], [], []
-
-for i in range(total_years):
-    op_idx = i - epc_years
-    if i < epc_years:
-        rev_main.append(0.0); rev_byprod.append(0.0)
-        rev_carbon.append(0.0); rev_residual.append(0.0); rev_total.append(0.0)
-        continue
-
-    cp              = _cap_pct(op_idx)
-    g_main_f        = (1 + g_main)   ** op_idx
-    g_byprod_f      = (1 + g_byprod) ** op_idx
-
-    main_rev        = main_price_val * wif_cap * cp * g_main_f
-    byprod_rev      = _bp_base_rev * cp * g_byprod_f
-    carbon_rev      = 0.0                  # future-proof placeholder
-    # Residual value: last operational year
-    if op_idx == op_years - 1:
-        resid_rev   = residual_val_usd
-    else:
-        resid_rev   = 0.0
-    total_rev       = main_rev + byprod_rev + carbon_rev + resid_rev
-
-    rev_main.append(main_rev); rev_byprod.append(byprod_rev)
-    rev_carbon.append(carbon_rev); rev_residual.append(resid_rev)
-    rev_total.append(total_rev)
-
-section_header("Module 2 — Revenue", "#3fb950")
-r1, r2, r3 = st.columns(3)
-with r1: kpi_card("Main Product Price", f"${main_price_val:,.2f}/{prod_unit_val}" if main_price_val else "Not set", "#3fb950")
-with r2: kpi_card("Total Revenue (undiscounted)", smart_fmt(sum(rev_total)), "#58a6ff")
-with r3: kpi_card("Residual Value",  smart_fmt(residual_val_usd), "#e6a817", "Method", dep_method)
-
-st.space("small")
-if not main_price_val:
-    st.warning("Main product selling price is not set. Set it in **Input Data → Other Premises** to see revenue.", icon=":material/warning:")
-
-if st.toggle("Show revenue detail", key="tog_rev"):
-    st.markdown(
-        _html_cf_table(
-            ["Calendar Year", "Proj. Year", "Op. Year",
-             "Main Product", "Byproducts", "Carbon Credits", "Residual Value", "TOTAL"],
-            [col_calendar, col_proj_year, col_op_year,
-             _fmt_col(rev_main), _fmt_col(rev_byprod),
-             _fmt_col(rev_carbon), _fmt_col(rev_residual), _fmt_col(rev_total)],
-            epc_years, total_col_idx=7
-        ), unsafe_allow_html=True,
-    )
-    st.space("small")
-    st.caption("Column totals")
-    _footer_totals(
-        ["Main Product", "Byproducts", "Carbon Credits", "Residual Value", "TOTAL"],
-        [sum(rev_main), sum(rev_byprod), sum(rev_carbon), sum(rev_residual), sum(rev_total)]
-    )
-
-st.space("medium")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MODULE 3: EXPENSES
-# ─────────────────────────────────────────────────────────────────────────────
-exp_rm, exp_cu, exp_labor, exp_sm, exp_afc, exp_ifc = [], [], [], [], [], []
-exp_rent, exp_total_exp = [], []
-
-for i in range(total_years):
-    op_idx = i - epc_years
-    if i < epc_years:
-        for lst in [exp_rm, exp_cu, exp_labor, exp_sm, exp_afc, exp_ifc, exp_rent, exp_total_exp]:
-            lst.append(0.0)
-        continue
-
-    cp   = _cap_pct(op_idx)
-    fp   = _fc_pct(op_idx)
-    g_rm_f  = (1 + g_rm) ** op_idx
-    g_cu_f  = (1 + g_cu) ** op_idx
-    g_fc_f  = (1 + g_fc) ** op_idx
-
-    rm_yr    = -(_rm_base    * cp * g_rm_f)
-    cu_yr    = -(_cu_base    * cp * g_cu_f)
-    labor_yr = -(_labor_base * fp * g_fc_f)
-    sm_yr    = -(_sm_base    * fp * g_fc_f)
-    afc_yr   = -(_afc_base   * fp * g_fc_f)
-    ifc_yr   = -(_indirect_base * fp * g_fc_f)
-    rent_yr  = -(land_rent_yr   * g_fc_f) if land_option_val == "Rent" else 0.0
-    total_yr = rm_yr + cu_yr + labor_yr + sm_yr + afc_yr + ifc_yr + rent_yr
-
-    exp_rm.append(rm_yr); exp_cu.append(cu_yr); exp_labor.append(labor_yr)
-    exp_sm.append(sm_yr); exp_afc.append(afc_yr); exp_ifc.append(ifc_yr)
-    exp_rent.append(rent_yr); exp_total_exp.append(total_yr)
-
-# Build column list conditionally (land rent only if relevant)
-_exp_headers = ["Calendar Year", "Proj. Year", "Op. Year",
-                "Raw Materials", "Chem. Inputs & Util.", "Carbon Costs",
-                "Labor", "Supply & Maint.", "AFC", "Indirect Fixed Costs"]
-_exp_cols    = [col_calendar, col_proj_year, col_op_year,
-                _fmt_col(exp_rm), _fmt_col(exp_cu),
-                _fmt_col([0.0]*total_years),   # carbon costs — always 0 for now
-                _fmt_col(exp_labor), _fmt_col(exp_sm),
-                _fmt_col(exp_afc), _fmt_col(exp_ifc)]
-_exp_footer_names  = ["Raw Materials", "Chem. Inputs", "Carbon", "Labor", "S&M", "AFC", "Indirect"]
-_exp_footer_values = [sum(exp_rm), sum(exp_cu), 0.0, sum(exp_labor), sum(exp_sm), sum(exp_afc), sum(exp_ifc)]
-
-if land_option_val == "Rent":
-    _exp_headers.append("Land Rent")
-    _exp_cols.append(_fmt_col(exp_rent))
-    _exp_footer_names.append("Land Rent")
-    _exp_footer_values.append(sum(exp_rent))
-
-_exp_headers.append("TOTAL")
-_exp_cols.append(_fmt_col(exp_total_exp))
-_exp_footer_names.append("TOTAL")
-_exp_footer_values.append(sum(exp_total_exp))
-_total_exp_col_idx = len(_exp_cols) - 1
-
-section_header("Module 3 — Expenses", "#f85149")
-e1, e2, e3 = st.columns(3)
-with e1: kpi_card("Total Expenses (undiscounted)", smart_fmt(abs(sum(exp_total_exp))), "#f85149")
-with e2: kpi_card("Variable Cost Base", smart_fmt(abs(sum(exp_rm) + sum(exp_cu))), "#ff7b72")
-with e3: kpi_card("Fixed Cost Base", smart_fmt(abs(sum(exp_labor)+sum(exp_sm)+sum(exp_afc)+sum(exp_ifc))), "#ffa657")
-
-st.space("small")
-if st.toggle("Show expenses detail", key="tog_exp"):
-    st.markdown(
-        _html_cf_table(_exp_headers, _exp_cols, epc_years, total_col_idx=_total_exp_col_idx),
-        unsafe_allow_html=True,
-    )
-    st.space("small")
-    st.caption("Column totals")
-    _footer_totals(_exp_footer_names, _exp_footer_values)
-
-st.space("medium")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MODULE 4: FINANCING
-# ─────────────────────────────────────────────────────────────────────────────
-fin_debt, fin_amort, fin_accum, fin_interest, fin_total_fin = [], [], [], [], []
-
-if is_leveraged:
-    # Debt drawn during EPC proportional to CAPEX fractions
-    debt_drawn_epc = [total_debt * f for f in _capex_fracs]
-    annual_repay   = total_debt / amort_years if amort_years > 0 else 0.0
-    accumulated    = 0.0
-
-    for i in range(total_years):
-        op_idx  = i - epc_years
-        debt_i  = debt_drawn_epc[i] if i < epc_years else 0.0
-        accumulated += debt_i
-
-        # Amortization after grace period, for amort_years
-        if op_idx >= grace_years and (op_idx - grace_years) < amort_years:
-            amort_i = -annual_repay
-        else:
-            amort_i = 0.0
-
-        # Interest on balance before this year's repayment
-        interest_i = -(accumulated) * cod_val
-
-        accumulated += amort_i  # reduce balance after repayment
-
-        fin_debt.append(debt_i); fin_amort.append(amort_i)
-        fin_accum.append(accumulated); fin_interest.append(interest_i)
-        fin_total_fin.append(amort_i + interest_i)
-
-_fin_default_open = not is_leveraged   # hidden by default if not leveraged
-
-section_header("Module 4 — Financing", "#8b949e" if not is_leveraged else "#58a6ff")
-
-if not is_leveraged:
-    st.info("No financing configured (Financing Type = None). Module hidden by default.", icon=":material/info:")
-    _show_fin = st.toggle("Show financing module anyway", key="tog_fin")
-else:
-    f1, f2, f3 = st.columns(3)
-    with f1: kpi_card("Total Debt", smart_fmt(total_debt), "#58a6ff",
-                      "Ratio", f"{safe_val(d,'Debt Ratio Pct'):.1f}% of CAPEX")
-    with f2: kpi_card("Amortization", f"{amort_years} years", "#79c0ff",
-                      "Grace period", f"{grace_years} years")
-    with f3: kpi_card("Cost of Debt (COD)", f"{cod_val*100:.2f}%", "#e6a817")
-    _show_fin = st.toggle("Show financing detail", key="tog_fin", value=True)
-
-if _show_fin and is_leveraged:
-    st.markdown(
-        _html_cf_table(
-            ["Calendar Year", "Proj. Year", "Op. Year",
-             "Debt Drawdown", "Amortization", "Accum. Debt", "Interest", "TOTAL"],
-            [col_calendar, col_proj_year, col_op_year,
-             _fmt_col(fin_debt), _fmt_col(fin_amort),
-             _fmt_col(fin_accum), _fmt_col(fin_interest), _fmt_col(fin_total_fin)],
-            epc_years, total_col_idx=7, accent_col_idxs=[5]
-        ), unsafe_allow_html=True,
-    )
-    st.space("small")
-    st.caption("Column totals")
-    _footer_totals(
-        ["Debt Drawn", "Amortization", "Interest", "TOTAL (cash out)"],
-        [sum(fin_debt), sum(fin_amort), sum(fin_interest), sum(fin_total_fin)]
-    )
-
-st.space("medium")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MODULE 5: CASH FLOW
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── Depreciation schedule ─────────────────────────────────────────────────────
-dep_method_val = d.get("Depreciation Method", "Straight Line")
-dep_years_val  = int(safe_val(d, "Depreciation Years", 10))
-dep_annual_sl  = -(capex_val - residual_val_usd) / dep_years_val if dep_years_val > 0 else 0.0
-
-# MACRS reference table — IRS GDS half-year convention
-# Key = recovery period (years), value = list of annual rates (index 0 = recovery year 1)
-_MACRS_TABLE = {
-    3:  [0.3333, 0.4445, 0.1481, 0.0741],
-    5:  [0.2000, 0.3200, 0.1920, 0.1152, 0.1152, 0.0576],
-    7:  [0.1429, 0.2449, 0.1749, 0.1249, 0.0893, 0.0892, 0.0893, 0.0446],
-    10: [0.1000, 0.1800, 0.1440, 0.1152, 0.0922, 0.0737, 0.0655, 0.0655,
-         0.0656, 0.0655, 0.0328],
-    15: [0.0500, 0.0950, 0.0855, 0.0770, 0.0693, 0.0623, 0.0590, 0.0590,
-         0.0591, 0.0590, 0.0591, 0.0590, 0.0591, 0.0590, 0.0591, 0.0295],
-    20: [0.0375, 0.0722, 0.0668, 0.0618, 0.0571, 0.0528, 0.0489, 0.0452,
-         0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446,
-         0.0446, 0.0446, 0.0446, 0.0446, 0.0223],
-}
-_macrs_key   = min(_MACRS_TABLE.keys(), key=lambda k: abs(k - dep_years_val))
-_macrs_rates = _MACRS_TABLE[_macrs_key]
-
-def _dep(op_idx):
-    """Depreciation for operational year op_idx (0-based). Returns negative value (expense)."""
-    if dep_method_val == "Straight Line":
-        return dep_annual_sl if op_idx < dep_years_val else 0.0
-    else:  # MACRS
-        return (-capex_val * _macrs_rates[op_idx]) if op_idx < len(_macrs_rates) else 0.0
-
-# ── Tax rate and MARR ─────────────────────────────────────────────────────────
-tax_rate_val = safe_val(d, "Tax Rate", 0.34)
-if tax_rate_val > 1.0:
-    tax_rate_val /= 100.0
-
-marr_val = safe_val(d, "MARR", 0.12)
-if marr_val > 1.0:
-    marr_val /= 100.0
-
-# ── Build cash flow arrays ────────────────────────────────────────────────────
-cf_revenue     = []
-cf_var_labor   = []
-cf_gross_profit= []
-cf_fixed       = []
-cf_ebitda      = []
-cf_depreciation= []
-cf_ebit        = []
-cf_fin_int_col = []
-cf_ebt         = []
-cf_taxes       = []
-cf_net_profit  = []
-cf_amortization= []
-cf_proj_inv    = []
-cf_cashflow    = []
-cf_pv_cf       = []
-cf_accum_pv    = []
-
-_accum_pv = 0.0
-
-for i in range(total_years):
-    op_idx = i - epc_years
-    is_epc = i < epc_years
-
-    # Always-active columns from other modules
-    proj_inv_i = inv_total[i]
-    fin_int_i  = fin_interest[i] if is_leveraged else 0.0
-    amort_i    = fin_amort[i]    if is_leveraged else 0.0
-
-    if is_epc:
-        # EPC: only investment + financing + cash flow columns are populated
-        cf_revenue.append(None);      cf_var_labor.append(None)
-        cf_gross_profit.append(None); cf_fixed.append(None)
-        cf_ebitda.append(None);       cf_depreciation.append(None)
-        cf_ebit.append(None);         cf_ebt.append(None)
-        cf_taxes.append(None);        cf_net_profit.append(None)
-
-        cf_fin_int_col.append(fin_int_i)
-        cf_amortization.append(amort_i)
-        cf_proj_inv.append(proj_inv_i)
-
-        cash_flow_i = proj_inv_i + fin_int_i + amort_i
-        pv_i        = cash_flow_i / (1 + marr_val) ** i
-        _accum_pv  += pv_i
-
-        cf_cashflow.append(cash_flow_i)
-        cf_pv_cf.append(pv_i)
-        cf_accum_pv.append(_accum_pv)
-        continue
-
-    # ── Operational rows ──────────────────────────────────────────────────────
-    # Revenue (already computed in module 2, index aligned)
-    rev_i  = rev_total[i]
-
-    # Variable & Labor = RM + CU + Carbon (0) + Labor  (all negative)
-    var_i  = exp_rm[i] + exp_cu[i] + 0.0 + exp_labor[i]
-
-    # Fixed Costs = S&M + AFC + IFC + Land Rent  (all negative)
-    fix_i  = exp_sm[i] + exp_afc[i] + exp_ifc[i] + exp_rent[i]
-
-    # Income statement chain
-    gp_i      = rev_i + var_i
-    ebitda_i  = gp_i  + fix_i
-    dep_i     = _dep(op_idx)
-    ebit_i    = ebitda_i + dep_i
-    ebt_i     = ebit_i   + fin_int_i
-    tax_i     = -max(0.0, ebt_i) * tax_rate_val   # 0 on losses, negative outflow otherwise
-    np_i      = ebt_i    + tax_i
-
-    # Cash Flow = Net Profit + Amortization (debt repayment) + Project Investment
-    cash_flow_i = np_i + amort_i + proj_inv_i
-    pv_i        = cash_flow_i / (1 + marr_val) ** i
-    _accum_pv  += pv_i
-
-    cf_revenue.append(rev_i);          cf_var_labor.append(var_i)
-    cf_gross_profit.append(gp_i);      cf_fixed.append(fix_i)
-    cf_ebitda.append(ebitda_i);        cf_depreciation.append(dep_i)
-    cf_ebit.append(ebit_i);            cf_fin_int_col.append(fin_int_i)
-    cf_ebt.append(ebt_i);              cf_taxes.append(tax_i)
-    cf_net_profit.append(np_i);        cf_amortization.append(amort_i)
-    cf_proj_inv.append(proj_inv_i);    cf_cashflow.append(cash_flow_i)
-    cf_pv_cf.append(pv_i);             cf_accum_pv.append(_accum_pv)
-
-npv_val = _accum_pv   # final accumulated PV = NPV
-
-# ─────────────────────────────────────────────────────────────────────────────
-# FORMATTING FOR TABLE — None values (EPC non-applicable) display as "—"
-# ─────────────────────────────────────────────────────────────────────────────
-def _fmt_cf_col(values):
-    """Format cash flow column — None → '—', 0 → '—', else ±accounting notation."""
-    out = []
-    for v in values:
-        if v is None:
-            out.append("—")
-        else:
-            out.append(_fmt_val(v))
-    return out
-
-# ── Summary KPIs ──────────────────────────────────────────────────────────────
-section_header("Module 5 — Cash Flow", "#58a6ff")
-
-npv_color = "#3fb950" if npv_val >= 0 else "#f85149"
-k1, k2, k3, k4 = st.columns(4)
-with k1:
-    kpi_card("NPV", smart_fmt(npv_val), npv_color,
-             "Discount rate", f"MARR = {marr_val*100:.2f}%")
-with k2:
-    # IRR approximation note — full IRR requires scipy, flag for next iteration
-    kpi_card("Depreciation Method", dep_method_val, "#8b949e",
-             "Period", f"{dep_years_val} years")
-with k3:
-    kpi_card("Tax Rate", f"{tax_rate_val*100:.1f}%", "#8b949e",
-             "Country", d.get("Tax Country", "—"))
-with k4:
-    _peak_inv = min(inv_total)   # most negative investment year
-    kpi_card("Peak Investment Year", smart_fmt(abs(_peak_inv)), "#e6a817",
-             "Yr", str(inv_total.index(_peak_inv)))
-
-st.space("small")
-
-# ── Detail table ──────────────────────────────────────────────────────────────
-if st.toggle("Show cash flow detail", key="tog_cf", value=True):
-    _cf_headers = [
-        "Calendar Year", "Proj. Year", "Op. Year",
-        "Revenue", "Var. & Labor", "Gross Profit",
-        "Fixed Costs", "EBITDA", "Depreciation",
-        "EBIT", "Fin. Interest", "EBT",
-        "Taxes", "Net Profit", "Amortization",
-        "Proj. Investment", "Cash Flow", "Present CF", "Accum. PV CF"
-    ]
-    _cf_col_arrays = [
-        col_calendar, col_proj_year, col_op_year,
-        _fmt_cf_col(cf_revenue),      _fmt_cf_col(cf_var_labor),
-        _fmt_cf_col(cf_gross_profit), _fmt_cf_col(cf_fixed),
-        _fmt_cf_col(cf_ebitda),       _fmt_cf_col(cf_depreciation),
-        _fmt_cf_col(cf_ebit),         _fmt_cf_col(cf_fin_int_col),
-        _fmt_cf_col(cf_ebt),          _fmt_cf_col(cf_taxes),
-        _fmt_cf_col(cf_net_profit),   _fmt_cf_col(cf_amortization),
-        _fmt_cf_col(cf_proj_inv),     _fmt_cf_col(cf_cashflow),
-        _fmt_cf_col(cf_pv_cf),        _fmt_cf_col(cf_accum_pv),
-    ]
-
-    # Highlight key result columns
-    _accent_idxs = [
-        _cf_headers.index("EBITDA")       - 0,   # col index offset by 0 (headers include index cols)
-        _cf_headers.index("Net Profit")   - 0,
-        _cf_headers.index("Cash Flow")    - 0,
-        _cf_headers.index("Accum. PV CF") - 0,
-    ]
-
-    st.markdown(
-        _html_cf_table(
-            _cf_headers, _cf_col_arrays, epc_years,
-            total_col_idx=_cf_headers.index("Cash Flow"),
-            accent_col_idxs=_accent_idxs
-        ),
-        unsafe_allow_html=True,
-    )
-
-    st.space("small")
-    st.caption("Key column totals (operational years only)")
-    _op_slice = slice(epc_years, total_years)
-    _footer_totals(
-        ["Revenue", "Var.+Labor", "Fixed", "EBITDA", "Net Profit", "Cash Flow", "NPV"],
-        [
-            sum(v for v in cf_revenue[_op_slice]     if v is not None),
-            sum(v for v in cf_var_labor[_op_slice]   if v is not None),
-            sum(v for v in cf_fixed[_op_slice]       if v is not None),
-            sum(v for v in cf_ebitda[_op_slice]      if v is not None),
-            sum(v for v in cf_net_profit[_op_slice]  if v is not None),
-            sum(v for v in cf_cashflow[_op_slice]    if v is not None),
-            npv_val,
-        ]
-    )
-
-st.space("medium")
-
 
