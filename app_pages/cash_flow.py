@@ -639,10 +639,8 @@ with col4:
         kpi_card("Operating margin", "Set price in Input", "#8b949e")
 # ═════════════════════════════════════════════════════════════════════════════
 # FINANCIAL ASSUMPTIONS PANEL
-# Inserted before the unified cash flow table.
-# Overrides are stored in st.session_state.cf_fin[scenario_name] — separate
-# from cf_wif (what-if CAPEX/OPEX levers) so resets don't interfere.
 # ═════════════════════════════════════════════════════════════════════════════
+from utils.constants import CAPEX_DISTRIBUTION, TAXES_BY_COUNTRY, COUNTRY_LIST
 
 # ── State init ────────────────────────────────────────────────────────────────
 if "cf_fin" not in st.session_state:
@@ -650,20 +648,16 @@ if "cf_fin" not in st.session_state:
 if scenario_name not in st.session_state.cf_fin:
     st.session_state.cf_fin[scenario_name] = {}
 
-_fin = st.session_state.cf_fin[scenario_name]   # shorthand
-
+_fin = st.session_state.cf_fin[scenario_name]
 
 def _fget(key, fallback=0.0):
-    """Return fin override if set, else saved scenario value, else fallback."""
     if key in _fin:
         return _fin[key]
     v = d.get(key, fallback)
     return v if isinstance(v, (int, float)) else fallback
 
-
-def _fset(key, val, base_val):
-    """Store override only when value differs from scenario default."""
-    if isinstance(base_val, int):
+def _fset(key, val, base_val, is_int=False):
+    if is_int:
         if int(val) != int(base_val):
             _fin[key] = int(val)
         elif key in _fin:
@@ -674,123 +668,105 @@ def _fset(key, val, base_val):
         elif key in _fin:
             del _fin[key]
 
-
 def _modified(key):
-    return key in _fin
-
+    return key in _fin and not str(key).startswith("_")
 
 def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
              min_val=None, is_int=False, computed_val=None, bold=False):
-    """
-    Render one assumption row:
-    - computed_val not None → read-only result row (green, bold)
-    - otherwise → editable input with base value shown and per-field reset
-    Returns the current effective value.
-    """
+    """Editable assumption row with per-field reset. Returns current value."""
     mod = _modified(key)
     c1, c2, c3 = st.columns([3, 2, 1])
-
     label_color = "#e6a817" if mod else "#c9d1d9"
     fw = "font-weight:600;" if bold else ""
     with c1:
         st.markdown(
             f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
             f'color:{label_color};{fw}">{label}</p>',
-            unsafe_allow_html=True,
-        )
-
+            unsafe_allow_html=True)
     if computed_val is not None:
-        # Read-only computed row
         with c2:
-            disp = f"{computed_val*100:.2f}%" if suffix == "%" else f"{computed_val:{fmt}}{suffix}"
+            disp = (f"{computed_val*100:{fmt}}%" if suffix == "%"
+                    else f"{computed_val:{fmt}}{suffix}")
             st.markdown(
                 f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
                 f'font-family:DM Mono,monospace;color:#3fb950;font-weight:600;'
-                f'text-align:right">{disp}</p>',
-                unsafe_allow_html=True,
-            )
+                f'text-align:right">{disp}</p>', unsafe_allow_html=True)
         with c3:
             st.markdown("")
         return computed_val
 
-    # Editable row
     current = _fin.get(key, base_val)
     wk = f"cffin_{scenario_name}_{key}"
     rk = f"cffinrst_{scenario_name}_{key}"
-
     with c2:
         if is_int:
             new_val = st.number_input(
                 label, value=int(current),
                 min_value=int(min_val) if min_val is not None else None,
-                step=1, key=wk, label_visibility="collapsed",
-            )
-            _fset(key, int(new_val), base_val)
+                step=1, key=wk, label_visibility="collapsed")
+            _fset(key, int(new_val), base_val, is_int=True)
+            return int(new_val)
         else:
-            # Display and edit as percentage if suffix=="%"
-            display_val = float(current) * 100.0 if suffix == "%" else float(current)
-            base_disp   = float(base_val)  * 100.0 if suffix == "%" else float(base_val)
+            disp_val  = float(current) * 100.0 if suffix == "%" else float(current)
+            base_disp = float(base_val) * 100.0 if suffix == "%" else float(base_val)
+            mv = (float(min_val) * 100.0 if (min_val is not None and suffix == "%")
+                  else float(min_val) if min_val is not None else None)
             new_disp = st.number_input(
-                label, value=display_val,
-                min_value=float(min_val)*100 if (min_val is not None and suffix=="%") else (float(min_val) if min_val is not None else None),
+                label, value=disp_val, min_value=mv,
                 step=float(step), format=f"%{fmt}",
-                key=wk, label_visibility="collapsed",
-            )
+                key=wk, label_visibility="collapsed")
             new_val = new_disp / 100.0 if suffix == "%" else new_disp
             _fset(key, new_val, base_val)
-
+            return new_val
     with c3:
-        hint = f"{base_val*100:{fmt}}%" if suffix=="%" else f"{base_val:{fmt}}{suffix}"
-        disabled = not mod
-        if st.button("↩", key=rk, help=f"Reset to: {hint}", disabled=disabled,
-                     use_container_width=True):
+        hint = (f"{float(base_val)*100:{fmt}}%" if suffix == "%"
+                else f"{base_val:{fmt}}{suffix}" if not is_int
+                else str(int(base_val)))
+        if st.button("↩", key=rk, help=f"Reset to: {hint}",
+                     disabled=not mod, use_container_width=True):
             _fin.pop(key, None)
             st.session_state.pop(wk, None)
             st.rerun()
-
     return _fin.get(key, base_val)
 
-
-def _display_row(label, value, fmt=".4f", suffix="", bold=False, color="#8b949e"):
-    """Non-editable display row — for structural values like Land Option."""
-    c1, c2, c3 = st.columns([3, 2, 1])
+def _display_row(label, value, fmt=".4f", suffix="", bold=False, color="#6e7681"):
+    c1, c2, _ = st.columns([3, 2, 1])
     fw = "font-weight:600;" if bold else ""
-    disp = (f"{value*100:{fmt}}%" if suffix == "%" and isinstance(value, float)
-            else f"{value}{suffix}" if not isinstance(value, float)
-            else f"{value:{fmt}}{suffix}")
+    if isinstance(value, float):
+        disp = f"{value*100:{fmt}}%" if suffix == "%" else f"{value:{fmt}}{suffix}"
+    else:
+        disp = f"{value}{suffix}"
     with c1:
         st.markdown(
-            f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;color:{color};{fw}">{label}</p>',
-            unsafe_allow_html=True,
-        )
+            f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
+            f'color:{color};{fw}">{label}</p>', unsafe_allow_html=True)
     with c2:
         st.markdown(
             f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
-            f'font-family:DM Mono,monospace;color:{color};text-align:right;{fw}">{disp}</p>',
-            unsafe_allow_html=True,
-        )
-    with c3:
-        st.markdown("")
-
+            f'font-family:DM Mono,monospace;color:{color};text-align:right;{fw}">'
+            f'{disp}</p>', unsafe_allow_html=True)
 
 def _section_label(text, color="#58a6ff"):
     st.markdown(
         f'<p style="font-size:.72rem;letter-spacing:.07em;color:{color};'
-        f'font-weight:600;margin:.6rem 0 .1rem 0;text-transform:uppercase">{text}</p>',
-        unsafe_allow_html=True,
-    )
+        f'font-weight:600;margin:.7rem 0 .1rem 0;text-transform:uppercase">{text}</p>',
+        unsafe_allow_html=True)
 
+def _reset_key(key):
+    """Pop both the fin override and the widget key."""
+    _fin.pop(key, None)
+    st.session_state.pop(f"cffin_{scenario_name}_{key}", None)
 
 # ── Expander ──────────────────────────────────────────────────────────────────
-with st.expander("**Financial Assumptions**  —  click to edit before running analysis",
-                 expanded=False, icon=":material/settings:"):
-
-    # Global reset
-    _n_overrides = len(_fin)
+with st.expander(
+    "**Financial Assumptions**  —  click to edit before running analysis",
+    expanded=False, icon=":material/settings:"
+):
+    _n_overrides = sum(1 for k in _fin if not k.startswith("_"))
     hdr_c1, hdr_c2 = st.columns([4, 1])
     with hdr_c1:
         if _n_overrides:
-            st.badge(f"{_n_overrides} assumption(s) modified from scenario defaults",
+            st.badge(f"{_n_overrides} assumption(s) modified",
                      icon=":material/edit:", color="orange")
         else:
             st.badge("All values match scenario defaults",
@@ -798,17 +774,15 @@ with st.expander("**Financial Assumptions**  —  click to edit before running a
     with hdr_c2:
         if st.button("↺ Reset all", key="fin_reset_all",
                      disabled=(_n_overrides == 0), use_container_width=True):
-            to_pop = [k for k in st.session_state
-                      if k.startswith(f"cffin_{scenario_name}_")
-                      or k.startswith(f"cffinrst_{scenario_name}_")]
-            for k in to_pop:
+            keys_to_pop = [k for k in st.session_state
+                           if k.startswith(f"cffin_{scenario_name}_")
+                           or k.startswith(f"cffinrst_{scenario_name}_")]
+            for k in keys_to_pop:
                 st.session_state.pop(k, None)
             st.session_state.cf_fin[scenario_name] = {}
             st.rerun()
 
     st.markdown("---")
-
-    # ── Layout: 3 columns matching Excel image ─────────────────────────────
     col_left, col_mid, col_right = st.columns(3)
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -816,351 +790,413 @@ with st.expander("**Financial Assumptions**  —  click to edit before running a
     # ─────────────────────────────────────────────────────────────────────────
     with col_left:
 
-        # LAND ASSUMPTIONS
+        # LAND
         _section_label("Land assumptions", "#e6a817")
-        _land_opt_val = d.get("Land Option", "Buy")
-        _isbl_val     = safe_val(d, "Project Costs ISBL+OSBL")
-        _display_row("Land option", _land_opt_val, color="#6e7681")
-        _display_row("ISBL+OSBL", _isbl_val / 1_000_000, fmt=".3f",
-                     suffix=" M USD", color="#6e7681")
-        if _land_opt_val == "Rent":
-            _lrp_base = safe_val(d, "Land Rent Pct", 0.0)
-            fa_land_rent_pct = _fin_row(
-                "Land factor (% of ISBL+OSBL)", "Land Rent Pct",
-                _lrp_base / 100.0, step=0.01, fmt=".2f", suffix="%",
-            )
-            _computed_rent = _isbl_val * fa_land_rent_pct / 100.0
-            _display_row("Land rent (M USD/year)",
-                         _computed_rent / 1_000_000, fmt=".3f",
-                         suffix=" M USD/yr", color="#3fb950")
-        else:
-            _lbp_base = safe_val(d, "Land Buy Pct", 2.0)
-            fa_land_buy_pct = _fin_row(
-                "Land purchase (% of ISBL+OSBL)", "Land Buy Pct",
-                _lbp_base / 100.0, step=0.01, fmt=".2f", suffix="%",
-            )
-            _computed_land = _isbl_val * fa_land_buy_pct / 100.0
-            _display_row("Land cost (M USD)",
-                         _computed_land / 1_000_000, fmt=".3f",
-                         suffix=" M USD", color="#3fb950")
+        _land_base    = d.get("Land Option", "Buy")
+        _land_wk      = f"cffin_{scenario_name}_Land Option"
+        _land_options = ["Buy", "Rent"]
+        _land_idx     = _land_options.index(_fin.get("Land Option", _land_base))
+        _land_changed = _modified("Land Option")
+        _lo_label_color = "#e6a817" if _land_changed else "#c9d1d9"
+        st.markdown(
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'color:{_lo_label_color}">Land option</p>', unsafe_allow_html=True)
+        _land_sel = st.radio(
+            "Land option", _land_options, index=_land_idx,
+            horizontal=True, key=_land_wk, label_visibility="collapsed")
+        if _land_sel != _land_base:
+            _fin["Land Option"] = _land_sel
+        elif "Land Option" in _fin:
+            del _fin["Land Option"]
+        fa_land_opt = _land_sel
 
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
+        _isbl_val = safe_val(d, "Project Costs ISBL+OSBL")
+        _display_row("ISBL+OSBL", _isbl_val / 1_000_000,
+                     fmt=".3f", suffix=" M USD")
+        if fa_land_opt == "Rent":
+            _lrp_base     = safe_val(d, "Land Rent Pct", 0.2) / 100.0
+            fa_land_pct   = _fin_row("Land factor (% of ISBL+OSBL)", "Land Rent Pct",
+                                     _lrp_base, step=0.01, fmt=".3f", suffix="%")
+            fa_land_rent_yr_val = _isbl_val * fa_land_pct / 100.0
+            _display_row("Land rent (M USD/yr)",
+                         fa_land_rent_yr_val / 1_000_000,
+                         fmt=".3f", suffix=" M USD/yr", color="#3fb950")
+            fa_land_buy_cost = 0.0
+        else:
+            _lbp_base        = safe_val(d, "Land Buy Pct", 2.0) / 100.0
+            fa_land_pct      = _fin_row("Land purchase (% of ISBL+OSBL)", "Land Buy Pct",
+                                        _lbp_base, step=0.01, fmt=".3f", suffix="%")
+            fa_land_buy_cost = _isbl_val * fa_land_pct / 100.0
+            _display_row("Land cost (M USD)",
+                         fa_land_buy_cost / 1_000_000,
+                         fmt=".3f", suffix=" M USD", color="#3fb950")
+            fa_land_rent_yr_val = 0.0
 
         # DEPRECIATION
         _section_label("Depreciation", "#e6a817")
-        _dep_m_val = d.get("Depreciation Method", "Straight Line")
-        _display_row("Depreciation method", _dep_m_val,
-                     color="#f85149" if _dep_m_val == "Straight Line" else "#e6a817")
+        _dep_m_base    = d.get("Depreciation Method", "Straight Line")
+        _dep_m_wk      = f"cffin_{scenario_name}_Depreciation Method"
+        _dep_m_opts    = ["Straight Line", "MACRS"]
+        _dep_m_idx     = _dep_m_opts.index(_fin.get("Depreciation Method", _dep_m_base))
+        _dep_m_changed = _modified("Depreciation Method")
+        st.markdown(
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'color:{"#e6a817" if _dep_m_changed else "#c9d1d9"}">Depreciation method</p>',
+            unsafe_allow_html=True)
+        _dep_m_sel = st.radio(
+            "Depreciation method", _dep_m_opts, index=_dep_m_idx,
+            horizontal=True, key=_dep_m_wk, label_visibility="collapsed")
+        if _dep_m_sel != _dep_m_base:
+            _fin["Depreciation Method"] = _dep_m_sel
+        elif "Depreciation Method" in _fin:
+            del _fin["Depreciation Method"]
+        fa_dep_method = _dep_m_sel
+
         fa_dep_yrs = _fin_row(
             "Depreciation period (years)", "Depreciation Years",
             int(safe_val(d, "Depreciation Years", 10)),
-            step=1, fmt="d", is_int=True, min_val=1,
-        )
+            step=1, fmt="d", is_int=True, min_val=1)
         fa_resid_pct = _fin_row(
             "Residual value (% of CAPEX)", "Residual Value Pct",
             safe_val(d, "Residual Value Pct", 20.0),
-            step=0.5, fmt=".1f", suffix="%",
-        )
+            step=0.5, fmt=".1f", suffix="%")
 
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
-
-        # FIXED COSTS DISTRIBUTION
+        # FIXED COSTS
         _section_label("Fixed costs distribution", "#3fb950")
-        st.markdown(
-            '<p style="font-size:.72rem;color:#6e7681;margin:0 0 .2rem 0">'
-            '% of annual fixed costs</p>', unsafe_allow_html=True
-        )
-        fa_fc_first = _fin_row(
-            "1st year", "Fixed Costs First Year",
-            safe_val(d, "Fixed Costs First Year", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
-        fa_fc_inter = _fin_row(
-            "Intermediate years", "Fixed Costs Intermediate",
-            safe_val(d, "Fixed Costs Intermediate", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
-        fa_fc_last = _fin_row(
-            "Last year", "Fixed Costs Last Year",
-            safe_val(d, "Fixed Costs Last Year", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
-
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:.72rem;color:#6e7681;margin:0 0 .1rem 0">'
+                    '% of annual fixed costs</p>', unsafe_allow_html=True)
+        fa_fc_first = _fin_row("1st year", "Fixed Costs First Year",
+                               safe_val(d, "Fixed Costs First Year", 100.0),
+                               step=1.0, fmt=".1f", suffix="%")
+        fa_fc_inter = _fin_row("Intermediate years", "Fixed Costs Intermediate",
+                               safe_val(d, "Fixed Costs Intermediate", 100.0),
+                               step=1.0, fmt=".1f", suffix="%")
+        fa_fc_last  = _fin_row("Last year", "Fixed Costs Last Year",
+                               safe_val(d, "Fixed Costs Last Year", 100.0),
+                               step=1.0, fmt=".1f", suffix="%")
 
         # PRODUCTION CAPACITY
         _section_label("Production capacity", "#3fb950")
-        st.markdown(
-            '<p style="font-size:.72rem;color:#6e7681;margin:0 0 .2rem 0">'
-            '% of total capacity</p>', unsafe_allow_html=True
-        )
-        fa_cap_first = _fin_row(
-            "1st year", "Capacity First Year",
-            safe_val(d, "Capacity First Year", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
-        fa_cap_inter = _fin_row(
-            "Intermediate years", "Capacity Intermediate",
-            safe_val(d, "Capacity Intermediate", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
-        fa_cap_last = _fin_row(
-            "Last year", "Capacity Last Year",
-            safe_val(d, "Capacity Last Year", 100.0),
-            step=1.0, fmt=".1f", suffix="%",
-        )
+        st.markdown('<p style="font-size:.72rem;color:#6e7681;margin:0 0 .1rem 0">'
+                    '% of total capacity</p>', unsafe_allow_html=True)
+        fa_cap_first = _fin_row("1st year", "Capacity First Year",
+                                safe_val(d, "Capacity First Year", 100.0),
+                                step=1.0, fmt=".1f", suffix="%")
+        fa_cap_inter = _fin_row("Intermediate years", "Capacity Intermediate",
+                                safe_val(d, "Capacity Intermediate", 100.0),
+                                step=1.0, fmt=".1f", suffix="%")
+        fa_cap_last  = _fin_row("Last year", "Capacity Last Year",
+                                safe_val(d, "Capacity Last Year", 100.0),
+                                step=1.0, fmt=".1f", suffix="%")
 
     # ─────────────────────────────────────────────────────────────────────────
     # MIDDLE COLUMN
     # ─────────────────────────────────────────────────────────────────────────
     with col_mid:
 
+        # PROJECT LIFETIME
+        _section_label("Project lifetime", "#58a6ff")
+        fa_op_yrs  = _fin_row("Project lifetime (years)", "Project Lifetime",
+                              int(safe_val(d, "Project Lifetime", 20)),
+                              step=1, fmt="d", is_int=True, min_val=1)
+        fa_epc_yrs = _fin_row("EPC time (years)", "EPC Years",
+                              int(safe_val(d, "EPC Years", 3)),
+                              step=1, fmt="d", is_int=True, min_val=1)
+        _display_row("Total (years)", fa_op_yrs + fa_epc_yrs,
+                     fmt="d", bold=True, color="#3fb950")
+
+        # CAPEX DISTRIBUTION
+        _section_label("Distribution of CAPEX", "#e6a817")
+        st.markdown('<p style="font-size:.72rem;color:#6e7681;margin:0 0 .15rem 0">'
+                    'EPC year fractions (last year = 1 − others)</p>',
+                    unsafe_allow_html=True)
+
+        # Detect EPC count change → reset fractions to reference table
+        _prev_epc_key = f"_epc_for_fracs"
+        _prev_epc     = _fin.get(_prev_epc_key)
+        if _prev_epc != fa_epc_yrs:
+            # EPC count changed — wipe stored fractions and reseed from ref table
+            for _ki in range(10):
+                _reset_key(f"capex_frac_{_ki}")
+            _fin[_prev_epc_key] = fa_epc_yrs
+
+        _ref_fracs = list(CAPEX_DISTRIBUTION[str(fa_epc_yrs)].values)[:fa_epc_yrs]
+        _ord       = ["1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th"]
+        _editable_fracs = []
+
+        # Header
+        st.markdown(
+            '<div style="display:flex;gap:.4rem;margin-bottom:.15rem">'
+            '<span style="flex:1.2;font-size:.7rem;color:#6e7681">EPC year</span>'
+            '<span style="flex:2;font-size:.7rem;color:#6e7681;text-align:right">'
+            '% of CAPEX</span>'
+            '<span style="flex:.5"></span></div>',
+            unsafe_allow_html=True)
+
+        for _ki in range(fa_epc_yrs - 1):
+            _frac_base = _ref_fracs[_ki] if _ki < len(_ref_fracs) else 0.0
+            _frac_key  = f"capex_frac_{_ki}"
+            _frac_wk   = f"cffin_{scenario_name}_{_frac_key}"
+            _frac_rk   = f"cffinrst_{scenario_name}_{_frac_key}"
+            _frac_cur  = _fin.get(_frac_key, _frac_base)
+            _frac_mod  = _modified(_frac_key)
+
+            fc1, fc2, fc3 = st.columns([1.2, 2, 0.5])
+            with fc1:
+                st.markdown(
+                    f'<p style="margin:0;padding:.32rem 0;font-size:.8rem;'
+                    f'color:{"#e6a817" if _frac_mod else "#c9d1d9"}">'
+                    f'{_ord[_ki]}</p>', unsafe_allow_html=True)
+            with fc2:
+                _new_frac_pct = st.number_input(
+                    f"frac_{_ki}", value=float(_frac_cur) * 100.0,
+                    min_value=0.0, max_value=100.0,
+                    step=1.0, format="%.2f",
+                    key=_frac_wk, label_visibility="collapsed")
+                _new_frac = _new_frac_pct / 100.0
+                if abs(_new_frac - _frac_base) > 1e-9:
+                    _fin[_frac_key] = _new_frac
+                elif _frac_key in _fin:
+                    del _fin[_frac_key]
+                _editable_fracs.append(_new_frac)
+            with fc3:
+                if st.button("↩", key=_frac_rk, help=f"Reset to {_frac_base*100:.2f}%",
+                             disabled=not _frac_mod, use_container_width=True):
+                    _reset_key(_frac_key)
+                    st.rerun()
+
+        # Last year — computed, read-only
+        _last_frac = max(0.0, 1.0 - sum(_editable_fracs))
+        fl1, fl2, fl3 = st.columns([1.2, 2, 0.5])
+        with fl1:
+            st.markdown(
+                f'<p style="margin:0;padding:.32rem 0;font-size:.8rem;'
+                f'color:#6e7681">{_ord[fa_epc_yrs-1]}</p>', unsafe_allow_html=True)
+        with fl2:
+            _last_color = "#f85149" if _last_frac < 0 else "#3fb950"
+            st.markdown(
+                f'<p style="margin:0;padding:.32rem 0;font-size:.8rem;'
+                f'font-family:DM Mono,monospace;color:{_last_color};text-align:right">'
+                f'{_last_frac*100:.2f}%</p>', unsafe_allow_html=True)
+        # Warning if fractions overshoot
+        if sum(_editable_fracs) > 1.0:
+            st.warning("Fractions exceed 100% — last year clamped to 0%.",
+                       icon=":material/warning:")
+
+        # Store final fracs for table consumption
+        _fa_capex_fracs = _editable_fracs + [_last_frac]
+
         # TAXES
         _section_label("Taxes", "#58a6ff")
-        _tax_country = d.get("Tax Country", "Brazil")
-        _tax_base    = safe_val(d, "Tax Rate", 0.34)
-        if _tax_base > 1.0: _tax_base /= 100.0
-        _display_row("Country", _tax_country, color="#6e7681")
+        _tax_country_base = d.get("Tax Country", "Brazil")
+        _tax_country_cur  = _fin.get("Tax Country", _tax_country_base)
+        _tc_wk            = f"cffin_{scenario_name}_Tax Country"
+        _tc_changed       = _modified("Tax Country")
+        st.markdown(
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'color:{"#e6a817" if _tc_changed else "#c9d1d9"}">Country</p>',
+            unsafe_allow_html=True)
+        _tc_idx = COUNTRY_LIST.index(_tax_country_cur) if _tax_country_cur in COUNTRY_LIST else 0
+        _tc_sel = st.selectbox("Tax country", COUNTRY_LIST, index=_tc_idx,
+                               key=_tc_wk, label_visibility="collapsed")
+        if _tc_sel != _tax_country_base:
+            _fin["Tax Country"] = _tc_sel
+            # Auto-update tax rate from reference table when country changes
+            if _fin.get("_tax_country_prev") != _tc_sel:
+                _auto_tax = TAXES_BY_COUNTRY.get(_tc_sel, 0.34)
+                _fin["Tax Rate"] = _auto_tax
+                st.session_state.pop(f"cffin_{scenario_name}_Tax Rate", None)
+                _fin["_tax_country_prev"] = _tc_sel
+        elif "Tax Country" in _fin:
+            del _fin["Tax Country"]
+
+        _tax_ref_from_country = TAXES_BY_COUNTRY.get(
+            _fin.get("Tax Country", _tax_country_base), 0.34)
+        _tax_base_val = safe_val(d, "Tax Rate", 0.34)
+        if _tax_base_val > 1.0: _tax_base_val /= 100.0
+
         fa_tax_rate = _fin_row(
             "Tax rate", "Tax Rate",
-            _tax_base, step=0.1, fmt=".1f", suffix="%",
-        )
+            _fin.get("Tax Rate", _tax_base_val),
+            step=0.1, fmt=".1f", suffix="%")
 
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
-
-        # FINANCIAL LEVERAGE
+        # FINANCING
         _section_label("Financial leverage", "#58a6ff")
-        _fin_type_val = d.get("Financing Type", "None")
-        _display_row("Financing type", _fin_type_val, color="#6e7681")
-        _is_lev = _fin_type_val == "Straight Line"
-        if _is_lev:
+        _fin_t_base = d.get("Financing Type", "None")
+        _fin_t_wk   = f"cffin_{scenario_name}_Financing Type"
+        _fin_t_opts = ["None", "Straight Line"]
+        _fin_t_idx  = _fin_t_opts.index(_fin.get("Financing Type", _fin_t_base))
+        _fin_t_chg  = _modified("Financing Type")
+        st.markdown(
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'color:{"#e6a817" if _fin_t_chg else "#c9d1d9"}">Financing type</p>',
+            unsafe_allow_html=True)
+        _fin_t_sel = st.radio(
+            "Financing type", _fin_t_opts, index=_fin_t_idx,
+            horizontal=True, key=_fin_t_wk, label_visibility="collapsed")
+        if _fin_t_sel != _fin_t_base:
+            _fin["Financing Type"] = _fin_t_sel
+        elif "Financing Type" in _fin:
+            del _fin["Financing Type"]
+        fa_fin_type = _fin_t_sel
+        fa_leveraged = fa_fin_type == "Straight Line"
+
+        if fa_leveraged:
             fa_debt_ratio = _fin_row(
                 "Debt ratio (% of CAPEX)", "Debt Ratio Pct",
                 safe_val(d, "Debt Ratio Pct", 50.0),
-                step=1.0, fmt=".1f", suffix="%",
-            )
+                step=1.0, fmt=".1f", suffix="%")
             fa_amort_yrs = _fin_row(
                 "Amortization period (years)", "Amortization Years",
                 int(safe_val(d, "Amortization Years", 13)),
-                step=1, fmt="d", is_int=True, min_val=1,
-            )
+                step=1, fmt="d", is_int=True, min_val=1)
             fa_grace_yrs = _fin_row(
                 "Grace period (years)", "Grace Period Years",
                 int(safe_val(d, "Grace Period Years", 5)),
-                step=1, fmt="d", is_int=True, min_val=0,
-            )
+                step=1, fmt="d", is_int=True, min_val=0)
         else:
-            for lbl in ["Debt ratio (% of CAPEX)",
-                        "Amortization period (years)", "Grace period (years)"]:
-                _display_row(lbl, "—", color="#484f58")
+            for _lbl in ["Debt ratio (% of CAPEX)",
+                         "Amortization period (years)", "Grace period (years)"]:
+                _display_row(_lbl, "—")
             fa_debt_ratio = 0.0
             fa_amort_yrs  = int(safe_val(d, "Amortization Years", 13))
-            fa_grace_yrs  = int(safe_val(d, "Grace Period Years", 5))
-
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
-
-        # MARR
-        _section_label("MARR", "#58a6ff")
-        fa_cbr = _fin_row(
-            "Central bank interest rate (rB)", "Central Bank Rate",
-            safe_val(d, "Central Bank Rate", 5.45),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        fa_cs = _fin_row(
-            "Credit spread (Scu)", "Credit Spread",
-            safe_val(d, "Credit Spread", 2.94),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        # COD computed
-        fa_tax_frac = _fin.get("Tax Rate", _tax_base)
-        if fa_tax_frac > 1.0: fa_tax_frac /= 100.0
-        fa_cod = (fa_cbr / 100.0 + fa_cs / 100.0) * (1.0 - fa_tax_frac)
-        _fin_row("Cost of debt (COD)", "COD", fa_cod,
-                 computed_val=fa_cod, bold=True)
-
-        fa_ubeta = _fin_row(
-            "Unlevered/Asset beta (βu)", "Unlevered Beta",
-            safe_val(d, "Unlevered Beta", 1.0),
-            step=0.01, fmt=".2f",
-        )
-        # Levered beta computed
-        _dr_frac = (_fin.get("Debt Ratio Pct", safe_val(d,"Debt Ratio Pct",50.0)) / 100.0
-                    if _is_lev else 0.0)
-        _lev_factor = ((1.0 - fa_tax_frac) * _dr_frac / (1.0 - _dr_frac)
-                       if _dr_frac < 1.0 else 0.0)
-        fa_lbeta = fa_ubeta * (1.0 + _lev_factor)
-        _fin_row("Levered/Equity beta (βl)", "Levered Beta", fa_lbeta,
-                 computed_val=fa_lbeta)
-
-        fa_rm = _fin_row(
-            "Market return (rM)", "Market Return",
-            safe_val(d, "Market Return", 8.63),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        fa_rf = _fin_row(
-            "Risk-free rate (rf)", "Risk Free Rate",
-            safe_val(d, "Risk Free Rate", 1.94),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        # Market risk premium computed
-        fa_prm = fa_lbeta * (fa_rm - fa_rf) / 100.0
-        _fin_row("Market risk premium (PRM)", "Market Risk Premium", fa_prm,
-                 computed_val=fa_prm, bold=True)
-
-        fa_prp = _fin_row(
-            "Country risk premium (PRP)", "Country Risk Premium",
-            safe_val(d, "Country Risk Premium", 3.63),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        fa_uscpi = _fin_row(
-            "U.S. CPI (IUSA)", "US CPI",
-            safe_val(d, "US CPI", 2.46),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        fa_ccpi = _fin_row(
-            "Country's CPI (Icountry)", "Country CPI",
-            safe_val(d, "Country CPI", 4.65),
-            step=0.01, fmt=".2f", suffix="%",
-        )
-        # COE computed
-        _rfr_f  = fa_rf    / 100.0
-        _ccpi_f = fa_ccpi  / 100.0
-        _uscpi_f= fa_uscpi / 100.0
-        _prp_f  = fa_prp   / 100.0
-        fa_coe  = ((1 + _rfr_f) * (1 + _ccpi_f) / (1 + _uscpi_f) - 1) + fa_prm + _prp_f
-        _fin_row("Cost of equity (COE)", "COE", fa_coe,
-                 computed_val=fa_coe, bold=True)
-
-        # MARR — editable override of formula default
-        _marr_formula = (_dr_frac * fa_cod + (1 - _dr_frac) * fa_coe) if _is_lev else fa_coe
-        fa_marr = _fin_row(
-            "MARR", "MARR",
-            _marr_formula,
-            step=0.01, fmt=".2f", suffix="%", bold=True,
-        )
-        # Store computed values so the table can read them
-        _fin["_cod_computed"]  = fa_cod
-        _fin["_coe_computed"]  = fa_coe
-        _fin["_marr_computed"] = fa_marr if "MARR" in _fin else _marr_formula
+            fa_grace_yrs  = int(safe_val(d, "Grace Period Years",  5))
 
     # ─────────────────────────────────────────────────────────────────────────
     # RIGHT COLUMN
     # ─────────────────────────────────────────────────────────────────────────
     with col_right:
 
+        # MARR
+        _section_label("MARR", "#58a6ff")
+        fa_cbr = _fin_row("Central bank interest rate (rB)", "Central Bank Rate",
+                          safe_val(d, "Central Bank Rate", 5.45),
+                          step=0.01, fmt=".2f", suffix="%")
+        fa_cs  = _fin_row("Credit spread (Scu)", "Credit Spread",
+                          safe_val(d, "Credit Spread", 2.94),
+                          step=0.01, fmt=".2f", suffix="%")
+
+        _fa_tax_frac = _fin.get("Tax Rate", _tax_base_val if '_tax_base_val' in dir() else 0.34)
+        if _fa_tax_frac > 1.0: _fa_tax_frac /= 100.0
+        fa_cod = (fa_cbr / 100.0 + fa_cs / 100.0) * (1.0 - _fa_tax_frac)
+        _fin_row("Cost of debt (COD)", "_cod", fa_cod,
+                 computed_val=fa_cod, bold=True)
+
+        fa_ubeta = _fin_row("Unlevered/Asset beta (βu)", "Unlevered Beta",
+                            safe_val(d, "Unlevered Beta", 1.0),
+                            step=0.01, fmt=".2f")
+        _dr_frac = (fa_debt_ratio / 100.0) if fa_leveraged else 0.0
+        _lev_f   = ((1.0 - _fa_tax_frac) * _dr_frac / (1.0 - _dr_frac)
+                    if _dr_frac < 1.0 else 0.0)
+        fa_lbeta = fa_ubeta * (1.0 + _lev_f)
+        _fin_row("Levered/Equity beta (βl)", "_lbeta", fa_lbeta,
+                 computed_val=fa_lbeta)
+
+        fa_rm = _fin_row("Market return (rM)", "Market Return",
+                         safe_val(d, "Market Return", 8.63),
+                         step=0.01, fmt=".2f", suffix="%")
+        fa_rf = _fin_row("Risk-free rate (rf)", "Risk Free Rate",
+                         safe_val(d, "Risk Free Rate", 1.94),
+                         step=0.01, fmt=".2f", suffix="%")
+        fa_prm = fa_lbeta * (fa_rm - fa_rf) / 100.0
+        _fin_row("Market risk premium (PRM)", "_prm", fa_prm,
+                 computed_val=fa_prm, bold=True)
+
+        fa_prp   = _fin_row("Country risk premium (PRP)", "Country Risk Premium",
+                            safe_val(d, "Country Risk Premium", 3.63),
+                            step=0.01, fmt=".2f", suffix="%")
+        fa_uscpi = _fin_row("U.S. CPI (IUSA)", "US CPI",
+                            safe_val(d, "US CPI", 2.46),
+                            step=0.01, fmt=".2f", suffix="%")
+        fa_ccpi  = _fin_row("Country's CPI (Icountry)", "Country CPI",
+                            safe_val(d, "Country CPI", 4.65),
+                            step=0.01, fmt=".2f", suffix="%")
+
+        _rfr_f   = fa_rf    / 100.0
+        _ccpi_f  = fa_ccpi  / 100.0
+        _uscpi_f = fa_uscpi / 100.0
+        fa_coe   = ((1 + _rfr_f) * (1 + _ccpi_f) / (1 + _uscpi_f) - 1) + fa_prm + fa_prp / 100.0
+        _fin_row("Cost of equity (COE)", "_coe", fa_coe,
+                 computed_val=fa_coe, bold=True)
+
+        _marr_formula = (_dr_frac * fa_cod + (1 - _dr_frac) * fa_coe) if fa_leveraged else fa_coe
+        fa_marr = _fin_row("MARR", "MARR", _marr_formula,
+                           step=0.01, fmt=".2f", suffix="%", bold=True)
+        # Persist computed intermediates (not user-editable, prefixed with _)
+        _fin["_cod_computed"]  = fa_cod
+        _fin["_coe_computed"]  = fa_coe
+        _fin["_marr_final"]    = fa_marr if "MARR" in _fin else _marr_formula
+
         # MARKET ASSUMPTIONS
         _section_label("Market assumptions (per year)", "#3fb950")
-        st.markdown(
-            '<p style="font-size:.72rem;color:#6e7681;margin:0 0 .2rem 0">'
-            'Annual growth rate (Increase / Decrease %)</p>',
-            unsafe_allow_html=True,
-        )
-        fa_g_main = _fin_row(
-            "Main product", "Growth Main Price",
-            safe_val(d, "Growth Main Price", 0.0),
-            step=0.1, fmt=".1f", suffix="%",
-        )
-        fa_g_bp = _fin_row(
-            "Byproducts", "Growth Byproduct Price",
-            safe_val(d, "Growth Byproduct Price", 0.0),
-            step=0.1, fmt=".1f", suffix="%",
-        )
-        fa_g_rm = _fin_row(
-            "Raw materials", "Growth Raw Materials",
-            safe_val(d, "Growth Raw Materials", 0.0),
-            step=0.1, fmt=".1f", suffix="%",
-        )
-        fa_g_cu = _fin_row(
-            "Chemical inputs & utilities", "Growth Chem Utilities",
-            safe_val(d, "Growth Chem Utilities", 0.0),
-            step=0.1, fmt=".1f", suffix="%",
-        )
-        fa_g_fc = _fin_row(
-            "Fixed costs", "Growth Fixed Costs",
-            safe_val(d, "Growth Fixed Costs", 0.0),
-            step=0.1, fmt=".1f", suffix="%",
-        )
-
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
-
-        # PROJECT LIFETIME
-        _section_label("Project lifetime", "#58a6ff")
-        _pl  = int(safe_val(d, "Project Lifetime", 20))
-        _epc = int(safe_val(d, "EPC Years", 3))
-        _display_row("Project lifetime (years)", _pl, fmt="d", color="#6e7681")
-        _display_row("EPC time (years)",         _epc, fmt="d", color="#6e7681")
-        _display_row("Lifetime + EPC (years)",   _pl + _epc, fmt="d",
-                     color="#3fb950", bold=True)
-
-        st.markdown('<div style="margin:.4rem 0"></div>', unsafe_allow_html=True)
-
-        # CAPEX DISTRIBUTION
-        _section_label("Distribution of CAPEX", "#e6a817")
-        from utils.constants import CAPEX_DISTRIBUTION
-        _epc_col_dist = str(_epc)
-        _dist_series  = CAPEX_DISTRIBUTION[_epc_col_dist]
-        _dist_vals    = list(_dist_series.values)[:_epc]
-        _ord_labels   = ["1st","2nd","3rd","4th","5th",
-                         "6th","7th","8th","9th","10th"]
-
-        # Header
-        st.markdown(
-            '<div style="display:flex;gap:.5rem;margin-bottom:.15rem">'
-            '<span style="flex:2;font-size:.72rem;color:#6e7681">EPC year</span>'
-            '<span style="flex:1;font-size:.72rem;color:#6e7681;text-align:right">'
-            '% of CAPEX</span></div>',
-            unsafe_allow_html=True,
-        )
-        for k, frac in enumerate(_dist_vals):
-            lbl = _ord_labels[k] if k < len(_ord_labels) else f"{k+1}th"
-            pct_str = f"{frac*100:.4f}%"
-            st.markdown(
-                f'<div style="display:flex;gap:.5rem;padding:.15rem 0;'
-                f'border-bottom:1px solid #21262d22">'
-                f'<span style="flex:2;font-size:.8rem;color:#c9d1d9">{lbl}</span>'
-                f'<span style="flex:1;font-size:.8rem;font-family:DM Mono,monospace;'
-                f'color:#e6a817;text-align:right">{pct_str}</span></div>',
-                unsafe_allow_html=True,
-            )
+        st.markdown('<p style="font-size:.72rem;color:#6e7681;margin:0 0 .1rem 0">'
+                    'Annual growth rate (%)</p>', unsafe_allow_html=True)
+        fa_g_main = _fin_row("Main product",       "Growth Main Price",
+                             safe_val(d, "Growth Main Price",      0.0),
+                             step=0.1, fmt=".1f", suffix="%")
+        fa_g_bp   = _fin_row("Byproducts",         "Growth Byproduct Price",
+                             safe_val(d, "Growth Byproduct Price", 0.0),
+                             step=0.1, fmt=".1f", suffix="%")
+        fa_g_rm   = _fin_row("Raw materials",      "Growth Raw Materials",
+                             safe_val(d, "Growth Raw Materials",   0.0),
+                             step=0.1, fmt=".1f", suffix="%")
+        fa_g_cu   = _fin_row("Chem. inputs & util.","Growth Chem Utilities",
+                             safe_val(d, "Growth Chem Utilities",  0.0),
+                             step=0.1, fmt=".1f", suffix="%")
+        fa_g_fc   = _fin_row("Fixed costs",        "Growth Fixed Costs",
+                             safe_val(d, "Growth Fixed Costs",     0.0),
+                             step=0.1, fmt=".1f", suffix="%")
 
 st.space("medium")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# EXPOSE FINANCIAL ASSUMPTION VALUES FOR THE UNIFIED TABLE
-# All fa_* variables are now in scope and will be read by the table below.
-# For keys not overridden, fall back to scenario defaults.
+# EXPOSE _fa_* VARIABLES FOR THE UNIFIED TABLE
+# All variables below are consumed by financial_unified.py
 # ─────────────────────────────────────────────────────────────────────────────
 def _fa(key, fallback=0.0):
-    """Read financial assumption: fin override → scenario → fallback."""
-    if key in _fin and not key.startswith("_"):
+    if key in _fin and not str(key).startswith("_"):
         return _fin[key]
     v = d.get(key, fallback)
     return v if isinstance(v, (int, float)) else fallback
 
-# These replace the raw d.get() calls in the unified table
-_fa_dep_yrs     = int(_fa("Depreciation Years",      10))
-_fa_resid_pct   = _fa("Residual Value Pct",          20.0) / 100.0
-_fa_fc_first    = _fa("Fixed Costs First Year",      100.0) / 100.0
-_fa_fc_inter    = _fa("Fixed Costs Intermediate",    100.0) / 100.0
-_fa_fc_last     = _fa("Fixed Costs Last Year",       100.0) / 100.0
-_fa_cap_first   = _fa("Capacity First Year",         100.0) / 100.0
-_fa_cap_inter   = _fa("Capacity Intermediate",       100.0) / 100.0
-_fa_cap_last    = _fa("Capacity Last Year",          100.0) / 100.0
-_fa_tax         = _fa("Tax Rate",                    0.34)
-if _fa_tax > 1.0: _fa_tax /= 100.0
-_fa_debt_ratio  = _fa("Debt Ratio Pct",              0.0)   / 100.0 if _is_lev else 0.0
-_fa_amort_yrs   = int(_fa("Amortization Years",      13))
-_fa_grace_yrs   = int(_fa("Grace Period Years",       5))
-_fa_marr        = _fin.get("_marr_computed", _marr_formula if "_marr_formula" in dir() else _fa("MARR", 0.12))
-if _fa_marr > 1.0: _fa_marr /= 100.0
-_fa_g_main      = _fa("Growth Main Price",           0.0) / 100.0
-_fa_g_byprod    = _fa("Growth Byproduct Price",      0.0) / 100.0
-_fa_g_rm        = _fa("Growth Raw Materials",        0.0) / 100.0
-_fa_g_cu        = _fa("Growth Chem Utilities",       0.0) / 100.0
-_fa_g_fc        = _fa("Growth Fixed Costs",          0.0) / 100.0
-# Land
-_fa_land_rent_yr = (_isbl_val * _fa("Land Rent Pct", 0.0) / 100.0
-                    if d.get("Land Option","Buy") == "Rent" else 0.0)
+# Structural
+_fa_epc_yrs     = fa_epc_yrs
+_fa_op_yrs      = fa_op_yrs
+_fa_capex_fracs = _fa_capex_fracs      # list of fracs, len == fa_epc_yrs
+_fa_land_opt    = fa_land_opt
+_fa_land_rent_yr= fa_land_rent_yr_val
+_fa_land_buy    = fa_land_buy_cost
+_fa_fin_type    = fa_fin_type
+_fa_leveraged   = fa_leveraged
+
+# Depreciation
+_fa_dep_method  = fa_dep_method
+_fa_dep_yrs     = fa_dep_yrs
+_fa_resid_pct   = fa_resid_pct / 100.0
+
+# Schedules
+_fa_cap_first   = fa_cap_first  / 100.0
+_fa_cap_inter   = fa_cap_inter  / 100.0
+_fa_cap_last    = fa_cap_last   / 100.0
+_fa_fc_first    = fa_fc_first   / 100.0
+_fa_fc_inter    = fa_fc_inter   / 100.0
+_fa_fc_last     = fa_fc_last    / 100.0
+
+# Financial
+_fa_tax         = fa_tax_rate if fa_tax_rate <= 1.0 else fa_tax_rate / 100.0
+_fa_debt_ratio  = (fa_debt_ratio / 100.0) if fa_leveraged else 0.0
+_fa_amort_yrs   = fa_amort_yrs
+_fa_grace_yrs   = fa_grace_yrs
+_fa_cod         = fa_cod
+_fa_marr_raw    = _fin.get("_marr_final", _marr_formula)
+_fa_marr        = _fa_marr_raw / 100.0 if _fa_marr_raw > 1.0 else _fa_marr_raw
+
+# Growth
+_fa_g_main      = fa_g_main  / 100.0
+_fa_g_byprod    = fa_g_bp    / 100.0
+_fa_g_rm        = fa_g_rm    / 100.0
+_fa_g_cu        = fa_g_cu    / 100.0
+_fa_g_fc        = fa_g_fc    / 100.0
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SECTION 3: FINANCIAL ANALYSIS — UNIFIED CASH FLOW TABLE
@@ -1188,8 +1224,8 @@ def _wv(key, fallback=0.0):
 # ─────────────────────────────────────────────────────────────────────────────
 # PROJECT TIMELINE  (structural — never overridable)
 # ─────────────────────────────────────────────────────────────────────────────
-_epc   = int(safe_val(d, "EPC Years", 3))
-_op    = int(safe_val(d, "Project Lifetime", 20))
+_epc   = _fa_epc_yrs
+_op    = _fa_op_yrs
 _total = _epc + _op
 _y0    = int(d.get("Year of Analysis", 2024))
 
@@ -1201,20 +1237,16 @@ _wc      = _wv("Working Capital", safe_val(d, "Working Capital"))
 _startup = _wv("Startup Costs",   safe_val(d, "Startup Costs"))
 _isbl    = safe_val(d, "Project Costs ISBL+OSBL")
 
-_land_opt = d.get("Land Option", "Buy")
+_land_opt = _fa_land_opt
 if _land_opt == "Buy":
-    _land_buy = _isbl * (safe_val(d, "Land Buy Pct", 0.0) / 100.0)
+    _land_buy = _fa_land_buy
     _land_rent_yr = 0.0
 else:
     _land_buy = 0.0
     _land_rent_yr = _fa_land_rent_yr
 
 _epc_col    = str(_epc)
-_cap_series = CAPEX_DISTRIBUTION[_epc_col]
-_cap_fracs  = list(_cap_series.values)[:_epc]
-_fs         = sum(_cap_fracs)
-if _fs > 0:
-    _cap_fracs = [f / _fs for f in _cap_fracs]
+_cap_fracs  = _fa_capex_fracs
 
 # ─────────────────────────────────────────────────────────────────────────────
 # REVENUE INPUTS  (what-if aware)
@@ -1253,7 +1285,7 @@ _g_fc     = _fa_g_fc
 # ─────────────────────────────────────────────────────────────────────────────
 _resid_pct  = _fa_resid_pct
 _resid_usd  = _capex * _resid_pct
-_dep_method = d.get("Depreciation Method", "Straight Line")
+_dep_method = _fa_dep_method
 _dep_yrs    = _fa_dep_yrs
 _dep_sl     = -(_capex - _resid_usd) / _dep_yrs if _dep_yrs > 0 else 0.0
 
@@ -1289,8 +1321,8 @@ _ifc_base  = wif_indirect
 # ─────────────────────────────────────────────────────────────────────────────
 # FINANCING  (structural — never overridable)
 # ─────────────────────────────────────────────────────────────────────────────
-_fin_type   = d.get("Financing Type", "None")
-_leveraged  = _fin_type == "Straight Line"
+_fin_type   = _fa_fin_type
+_leveraged  = _fa_leveraged
 _debt_ratio = _fa_debt_ratio
 _tot_debt   = _capex * _debt_ratio
 _amort_yrs  = _fa_amort_yrs
@@ -1508,76 +1540,6 @@ def _cc(vs):
     return "#f85149" if vs.startswith("(") else "#3fb950"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PER-MODULE KPI SECTIONS
-# ─────────────────────────────────────────────────────────────────────────────
-section_header("Financial Analysis — Overview", "#58a6ff")
-
-# Investment KPIs
-with st.expander("**Investment**", expanded=False, icon=":material/account_balance:"):
-    k1,k2,k3,k4 = st.columns(4)
-    with k1: kpi_card("Project CAPEX",   smart_fmt(_capex),   "#58a6ff", f"Over {_epc} EPC yr(s)", "distributed")
-    with k2: kpi_card("Working Capital", smart_fmt(_wc),      "#79c0ff", "Recovery", f"Op. year {_op}")
-    with k3: kpi_card("Start-up Costs",  smart_fmt(_startup), "#3fb950", "Timing",   "Op. year 1")
-    with k4:
-        if _land_opt == "Buy":
-            kpi_card("Land Purchase", smart_fmt(_land_buy), "#e6a817", "Timing", "Year 0")
-        else:
-            kpi_card("Land Rent", smart_fmt(_land_rent_yr)+"/yr", "#8b949e", "In", "Expenses")
-
-# Revenue KPIs
-with st.expander("**Revenue**", expanded=False, icon=":material/trending_up:"):
-    r1,r2,r3 = st.columns(3)
-    with r1: kpi_card("Main Product Price",
-                      f"${_main_price:,.2f}/{_prod_unit}" if _main_price else "Not set", "#3fb950")
-    with r2: kpi_card("Total Revenue (undiscounted)",
-                      smart_fmt(sum(v for v in R_tot if v)), "#58a6ff")
-    with r3: kpi_card("Residual Value", smart_fmt(_resid_usd), "#e6a817", "Method", _dep_method)
-    if not _main_price:
-        st.warning("Main product price not set — set it in Input Data → Other Premises.",
-                   icon=":material/warning:")
-
-# Expenses KPIs
-with st.expander("**Expenses**", expanded=False, icon=":material/payments:"):
-    e1,e2,e3 = st.columns(3)
-    with e1: kpi_card("Total Expenses (undiscounted)",
-                      smart_fmt(abs(sum(v for v in E_tot if v is not None))), "#f85149")
-    with e2: kpi_card("Variable Cost Base",
-                      smart_fmt(abs(sum(v for v in E_rm if v is not None)
-                                  + sum(v for v in E_cu if v is not None))), "#ff7b72")
-    with e3: kpi_card("Fixed Cost Base",
-                      smart_fmt(abs(sum(v for v in E_sm if v is not None)
-                                  + sum(v for v in E_afc if v is not None)
-                                  + sum(v for v in E_ifc if v is not None))), "#ffa657")
-
-# Financing KPIs
-with st.expander("**Financing**", expanded=False, icon=":material/credit_card:"):
-    if not _leveraged:
-        st.info("No financing configured (Financing Type = None).", icon=":material/info:")
-    else:
-        f1,f2,f3 = st.columns(3)
-        with f1: kpi_card("Total Debt", smart_fmt(_tot_debt), "#58a6ff",
-                          "Ratio", f"{safe_val(d,'Debt Ratio Pct'):.1f}% of CAPEX")
-        with f2: kpi_card("Amortization", f"{_amort_yrs} years", "#79c0ff",
-                          "Grace", f"{_grace_yrs} years")
-        with f3: kpi_card("Cost of Debt (COD)", f"{_cod*100:.2f}%", "#e6a817")
-
-# Cash Flow KPIs
-with st.expander("**Cash Flow**", expanded=True, icon=":material/account_balance_wallet:"):
-    npv_color = "#3fb950" if _npv >= 0 else "#f85149"
-    c1,c2,c3,c4 = st.columns(4)
-    with c1: kpi_card("NPV", smart_fmt(_npv), npv_color,
-                      "MARR", f"{_marr*100:.2f}%")
-    with c2: kpi_card("Depreciation", _dep_method, "#8b949e",
-                      "Period", f"{_dep_yrs} yrs")
-    with c3: kpi_card("Tax Rate", f"{_tax*100:.1f}%", "#8b949e",
-                      "Country", d.get("Tax Country", "—"))
-    with c4:
-        _peak_i   = I_tot.index(min(I_tot))
-        kpi_card("Peak Investment", smart_fmt(abs(min(I_tot))), "#e6a817",
-                 "Year", str(_peak_i))
-
-st.space("medium")
-
 # ─────────────────────────────────────────────────────────────────────────────
 # COLUMN SELECTOR — st.pills
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1750,5 +1712,72 @@ for start in range(0, len(_op_totals_names), _chunk):
                 f'</div>',
                 unsafe_allow_html=True,
             )
+
+st.space("medium")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINANCIAL ANALYSIS OVERVIEW — below the table
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+section_header("Financial Analysis — Overview", "#58a6ff")
+
+with st.expander("**Investment**", expanded=False, icon=":material/account_balance:"):
+    k1,k2,k3,k4 = st.columns(4)
+    with k1: kpi_card("Project CAPEX",   smart_fmt(_capex),   "#58a6ff", f"Over {_epc} EPC yr(s)", "distributed")
+    with k2: kpi_card("Working Capital", smart_fmt(_wc),      "#79c0ff", "Recovery", f"Op. year {_op}")
+    with k3: kpi_card("Start-up Costs",  smart_fmt(_startup), "#3fb950", "Timing",   "Op. year 1")
+    with k4:
+        if _land_opt == "Buy":
+            kpi_card("Land Purchase", smart_fmt(_land_buy), "#e6a817", "Timing", "Year 0")
+        else:
+            kpi_card("Land Rent", smart_fmt(_land_rent_yr)+"/yr", "#8b949e", "In", "Expenses")
+
+with st.expander("**Revenue**", expanded=False, icon=":material/trending_up:"):
+    r1,r2,r3 = st.columns(3)
+    with r1: kpi_card("Main Product Price",
+                      f"${_main_price:,.2f}/{_prod_unit}" if _main_price else "Not set", "#3fb950")
+    with r2: kpi_card("Total Revenue (undiscounted)",
+                      smart_fmt(sum(v for v in R_tot if v)), "#58a6ff")
+    with r3: kpi_card("Residual Value", smart_fmt(_resid_usd), "#e6a817", "Method", _dep_method)
+    if not _main_price:
+        st.warning("Main product price not set — set it in Input Data → Other Premises.",
+                   icon=":material/warning:")
+
+with st.expander("**Expenses**", expanded=False, icon=":material/payments:"):
+    e1,e2,e3 = st.columns(3)
+    with e1: kpi_card("Total Expenses (undiscounted)",
+                      smart_fmt(abs(sum(v for v in E_tot if v is not None))), "#f85149")
+    with e2: kpi_card("Variable Cost Base",
+                      smart_fmt(abs(sum(v for v in E_rm if v is not None)
+                                  + sum(v for v in E_cu if v is not None))), "#ff7b72")
+    with e3: kpi_card("Fixed Cost Base",
+                      smart_fmt(abs(sum(v for v in E_sm if v is not None)
+                                  + sum(v for v in E_afc if v is not None)
+                                  + sum(v for v in E_ifc if v is not None))), "#ffa657")
+
+with st.expander("**Financing**", expanded=False, icon=":material/credit_card:"):
+    if not _leveraged:
+        st.info("No financing configured (Financing Type = None).", icon=":material/info:")
+    else:
+        f1,f2,f3 = st.columns(3)
+        with f1: kpi_card("Total Debt",     smart_fmt(_tot_debt),       "#58a6ff",
+                          "Ratio", f"{_fa_debt_ratio*100:.1f}% of CAPEX")
+        with f2: kpi_card("Amortization",   f"{_amort_yrs} years",      "#79c0ff",
+                          "Grace", f"{_grace_yrs} years")
+        with f3: kpi_card("Cost of Debt",   f"{_fa_cod*100:.2f}%",      "#e6a817")
+
+with st.expander("**Cash Flow**", expanded=True, icon=":material/account_balance_wallet:"):
+    npv_color = "#3fb950" if _npv >= 0 else "#f85149"
+    c1,c2,c3,c4 = st.columns(4)
+    with c1: kpi_card("NPV", smart_fmt(_npv), npv_color,
+                      "MARR", f"{_marr*100:.2f}%")
+    with c2: kpi_card("Depreciation", _dep_method, "#8b949e",
+                      "Period", f"{_dep_yrs} yrs")
+    with c3: kpi_card("Tax Rate", f"{_tax*100:.1f}%", "#8b949e",
+                      "Country", _fin.get("Tax Country", d.get("Tax Country", "—")))
+    with c4:
+        _peak_i = I_tot.index(min(I_tot))
+        kpi_card("Peak Investment", smart_fmt(abs(min(I_tot))), "#e6a817",
+                 "Year", str(_peak_i))
 
 st.space("medium")
