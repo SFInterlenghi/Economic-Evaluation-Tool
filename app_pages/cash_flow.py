@@ -637,3 +637,261 @@ with col4:
                  "At price", f"${main_price:,.2f}/{prod_unit}")
     else:
         kpi_card("Operating margin", "Set price in Input", "#8b949e")
+# ═════════════════════════════════════════════════════════════════════════════
+# SECTION 3: FINANCIAL ANALYSIS — DETAILED CASH FLOW TABLE
+# ═════════════════════════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown("### Financial Analysis")
+st.caption(
+    "Detailed year-by-year cash flow table. "
+    "All values in USD — outflows shown as (negative), inflows as positive."
+)
+st.space("medium")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PULL INPUTS FROM SCENARIO
+# ─────────────────────────────────────────────────────────────────────────────
+from utils.constants import CAPEX_DISTRIBUTION
+
+epc_years        = int(safe_val(d, "EPC Years", 3))
+op_years         = int(safe_val(d, "Project Lifetime", 20))
+total_years      = epc_years + op_years
+year_of_analysis = int(d.get("Year of Analysis", 2024))
+
+# CAPEX fractions — always looked up from reference table using saved EPC Years
+_epc_col       = str(epc_years)
+_capex_series  = CAPEX_DISTRIBUTION[_epc_col]
+_capex_fracs   = list(_capex_series.values)[:epc_years]
+# Normalise defensively
+_frac_sum = sum(_capex_fracs)
+if _frac_sum > 0:
+    _capex_fracs = [f / _frac_sum for f in _capex_fracs]
+
+# Investment amounts (from saved scenario)
+capex_val   = safe_val(d, "Project CAPEX")
+wc_val      = safe_val(d, "Working Capital")
+startup_val = safe_val(d, "Startup Costs")
+
+land_option_val = d.get("Land Option", "Buy")
+if land_option_val == "Buy":
+    land_cost_val = safe_val(d, "Project Costs ISBL+OSBL") * (safe_val(d, "Land Buy Pct") / 100.0)
+else:
+    land_cost_val = 0.0   # land rent is an operating expense, not investment
+
+# ─────────────────────────────────────────────────────────────────────────────
+# YEAR INDEX ARRAYS
+# ─────────────────────────────────────────────────────────────────────────────
+calendar_years  = [year_of_analysis + i for i in range(total_years)]
+proj_year_idx   = list(range(total_years))
+op_year_labels  = ["—"] * epc_years + list(range(1, op_years + 1))
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INVESTMENT MODULE — build column arrays
+# ─────────────────────────────────────────────────────────────────────────────
+inv_capex, inv_wc, inv_startup, inv_land, inv_total = [], [], [], [], []
+
+for i in range(total_years):
+    op_idx = i - epc_years   # negative during EPC, 0 = first op year
+
+    # CAPEX — distributed across EPC years (outflow)
+    capex_row = -capex_val * _capex_fracs[i] if i < epc_years else 0.0
+
+    # Working Capital — last EPC year (outflow), recovered last op year (inflow)
+    if i == epc_years - 1:
+        wc_row = -wc_val
+    elif op_idx == op_years - 1:
+        wc_row = +wc_val
+    else:
+        wc_row = 0.0
+
+    # Startup — first operational year (outflow)
+    startup_row = -startup_val if op_idx == 0 else 0.0
+
+    # Land purchase — year 0 only (outflow); 0 if rent
+    land_row = -land_cost_val if i == 0 else 0.0
+
+    total_row = capex_row + wc_row + startup_row + land_row
+
+    inv_capex.append(capex_row)
+    inv_wc.append(wc_row)
+    inv_startup.append(startup_row)
+    inv_land.append(land_row)
+    inv_total.append(total_row)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FORMATTING HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+def _fmt_val(v):
+    """Format a float for cash flow table display.
+    Outflows: (1.234M) in red-formatted accounting notation.
+    Zero: shown as dash."""
+    if v == 0.0:
+        return "—"
+    abs_v = abs(v)
+    if abs_v >= 1_000_000:
+        s = f"{abs_v / 1_000_000:.3f}M"
+    elif abs_v >= 1_000:
+        s = f"{abs_v / 1_000:.1f}k"
+    else:
+        s = f"{abs_v:,.2f}"
+    return f"({s})" if v < 0 else s
+
+
+def _fmt_col(values):
+    return [_fmt_val(v) for v in values]
+
+
+def _cell_color(val_str):
+    """Map display string to color."""
+    if val_str == "—":
+        return "#30363d"
+    if val_str.startswith("("):
+        return "#f85149"    # outflow — red
+    return "#3fb950"        # inflow — green
+
+
+def _html_cf_table(headers, col_arrays, epc_count, total_col_idx=None):
+    """
+    Render a styled, scrollable HTML cash flow table.
+    - First 3 columns are index columns (left-aligned, muted)
+    - Value columns are right-aligned, monospaced, color-coded
+    - EPC rows have a darker background
+    - Optional total column receives bold + left border accent
+    """
+    th_base = (
+        "padding:.45rem .8rem;font-size:.74rem;letter-spacing:.04em;"
+        "white-space:nowrap;border-bottom:2px solid #21262d;"
+        "background:#0d1117;"
+    )
+    head_cells = []
+    for j, h in enumerate(headers):
+        align = "left" if j < 3 else "right"
+        head_cells.append(
+            f'<th style="{th_base}text-align:{align};color:#8b949e;">{h}</th>'
+        )
+
+    rows_html = []
+    for i in range(total_years):
+        is_epc = i < epc_count
+        bg = "#0d1117" if is_epc else "#161b22"
+        cells_html = []
+
+        for j, col in enumerate(col_arrays):
+            val = col[i]
+            is_total = total_col_idx is not None and j == total_col_idx
+
+            if j < 3:
+                # Index columns
+                color = "#484f58" if is_epc else "#6e7681"
+                align = "left" if j == 0 else "center"
+                td = (
+                    f"padding:.3rem .8rem;text-align:{align};"
+                    f"font-size:.78rem;color:{color};"
+                )
+            else:
+                color = _cell_color(str(val))
+                fw    = "font-weight:600;" if is_total else ""
+                bdr   = "border-left:1px solid #21262d;" if is_total else ""
+                td = (
+                    f"padding:.3rem .8rem;text-align:right;"
+                    f"font-family:DM Mono,monospace;font-size:.78rem;"
+                    f"color:{color};{fw}{bdr}"
+                )
+            cells_html.append(f'<td style="{td}">{val}</td>')
+
+        rows_html.append(
+            f'<tr style="background:{bg};border-bottom:1px solid #1c2128;">'
+            + "".join(cells_html)
+            + "</tr>"
+        )
+
+    return (
+        '<div style="overflow-x:auto;max-height:560px;overflow-y:auto;'
+        'border:1px solid #21262d;border-radius:6px;">'
+        "<table style='width:100%;border-collapse:collapse;'>"
+        "<thead style='position:sticky;top:0;z-index:2;'>"
+        f"<tr>{''.join(head_cells)}</tr></thead>"
+        f"<tbody>{''.join(rows_html)}</tbody>"
+        "</table></div>"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# INDEX COLUMNS (shared)
+# ─────────────────────────────────────────────────────────────────────────────
+col_calendar  = [str(y) for y in calendar_years]
+col_proj_year = [str(i) for i in proj_year_idx]
+col_op_year   = [str(v) for v in op_year_labels]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE: INVESTMENT
+# ─────────────────────────────────────────────────────────────────────────────
+section_header("Investment module", "#e6a817")
+
+# Summary KPIs — always visible
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    kpi_card("Project CAPEX", smart_fmt(capex_val), "#58a6ff",
+             f"Over {epc_years} EPC yr(s)", "distributed per table")
+with k2:
+    kpi_card("Working Capital", smart_fmt(wc_val), "#79c0ff",
+             "Recovery", f"Op. year {op_years}")
+with k3:
+    kpi_card("Start-up Costs", smart_fmt(startup_val), "#3fb950",
+             "Timing", "Op. year 1")
+with k4:
+    if land_option_val == "Buy":
+        kpi_card("Land Purchase", smart_fmt(land_cost_val), "#e6a817",
+                 "Timing", "Project year 0")
+    else:
+        kpi_card("Land", "Rent", "#8b949e",
+                 "Expense", "in OPEX table")
+
+st.space("small")
+
+# Detail table — conditionally rendered via toggle (no compute cost when hidden)
+if st.toggle("Show investment detail table", key="toggle_inv_detail"):
+    _inv_headers = [
+        "Calendar Year", "Proj. Year", "Op. Year",
+        "CAPEX", "Working Capital", "Start-up", "Land Purchase", "TOTAL"
+    ]
+    _inv_col_arrays = [
+        col_calendar,
+        col_proj_year,
+        col_op_year,
+        _fmt_col(inv_capex),
+        _fmt_col(inv_wc),
+        _fmt_col(inv_startup),
+        _fmt_col(inv_land),
+        _fmt_col(inv_total),
+    ]
+    st.markdown(
+        _html_cf_table(_inv_headers, _inv_col_arrays, epc_years, total_col_idx=7),
+        unsafe_allow_html=True,
+    )
+
+    # Column totals footer
+    st.space("small")
+    st.caption("Column totals")
+    t1, t2, t3, t4, t5 = st.columns(5)
+    _footer_data = [
+        ("CAPEX",           sum(inv_capex)),
+        ("Working Capital", sum(inv_wc)),
+        ("Start-up",        sum(inv_startup)),
+        ("Land",            sum(inv_land)),
+        ("TOTAL",           sum(inv_total)),
+    ]
+    for col_ui, (lbl, val) in zip([t1, t2, t3, t4, t5], _footer_data):
+        with col_ui:
+            color = "#f85149" if val < 0 else ("#3fb950" if val > 0 else "#8b949e")
+            st.markdown(
+                f'<div style="text-align:center;padding:.4rem;'
+                f'background:#161b22;border-radius:4px;">'
+                f'<p style="font-size:.7rem;color:#6e7681;margin:0 0 .2rem 0">{lbl}</p>'
+                f'<p style="font-size:.88rem;font-family:DM Mono,monospace;'
+                f'color:{color};font-weight:600;margin:0">{_fmt_val(val)}</p>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+st.space("medium")
