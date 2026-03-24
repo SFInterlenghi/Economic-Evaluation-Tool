@@ -1937,8 +1937,8 @@ _cm_hi = 1.0 + (_tic_hi_pct / 100.0) if _has_bounds else 1.40
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PRODUCT PRICE STATE
-# Three mutually exclusive modes: USE_MSP | SET_NPV | SET_IRR | MANUAL
-# Stored in st.session_state.cf_price_mode[scenario]
+# Modes: MANUAL (user types price) | USE_MSP | SET_NPV | SET_IRR
+# Stored per-scenario in st.session_state.cf_price_mode[scenario]
 # ─────────────────────────────────────────────────────────────────────────────
 if "cf_price_mode" not in st.session_state:
     st.session_state.cf_price_mode = {}
@@ -1948,107 +1948,148 @@ if scenario_name not in st.session_state.cf_price_mode:
         "npv_target": 0.0,
         "irr_target": _fa_marr * 100.0,
         "solved_price": None,
+        "manual_price": None,   # user-typed override
+        "msp_initialised": False,
     }
 
 _pm = st.session_state.cf_price_mode[scenario_name]
 
-# Effective product price: solved if mode != MANUAL, else from input
-_manual_price = safe_val(d, "Main Product Price", 0.0)
+_input_price = safe_val(d, "Main Product Price", 0.0)   # from saved scenario
+
+# ── Auto-initialise: if no input price and MSP not yet computed, solve MSP ──
+if _input_price <= 0 and not _pm.get("msp_initialised") and _HAS_SCIPY:
+    with st.spinner("No selling price set — calculating MSP automatically…"):
+        _auto_msp = _solve_price_for_npv(0.0)
+    if _auto_msp and _auto_msp > 0:
+        _pm["mode"]           = "USE_MSP"
+        _pm["solved_price"]   = _auto_msp
+        _pm["msp_initialised"]= True
+    else:
+        _pm["msp_initialised"] = True   # mark even if failed to avoid infinite retry
+
+# ── Determine effective price ──────────────────────────────────────────────
+# Priority: solved_price (any non-MANUAL mode) > manual_price override > input_price
+if _pm["mode"] != "MANUAL":
+    _eff_price = _pm.get("solved_price") or _input_price
+else:
+    _eff_price = _pm.get("manual_price") if _pm.get("manual_price") is not None else _input_price
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONTROL ROW — MSP / Set NPV / Set IRR buttons + inputs
+# CONTROL ROW
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown("#### Price & NPV Controls")
+_price_unit = d.get("Unit", "")
+
 _ctrl_cols = st.columns([2, 3, 3, 3])
 
 with _ctrl_cols[0]:
-    st.markdown('<p style="font-size:.82rem;color:#8b949e;margin:.5rem 0 .2rem 0">'
+    st.markdown('<p style="font-size:.85rem;color:#8b949e;margin:.3rem 0 .1rem 0">'
                 'Main product selling price</p>', unsafe_allow_html=True)
-    _price_display = (_pm.get("solved_price") or _manual_price)
-    _price_unit = d.get("Unit", "")
-    color_p = "#e6a817" if _pm["mode"] != "MANUAL" else "#c9d1d9"
-    st.markdown(
-        f'<p style="font-size:1.3rem;font-family:DM Mono,monospace;'
-        f'color:{color_p};font-weight:700;margin:0">'
-        f'${_price_display:,.2f} / {_price_unit}</p>',
-        unsafe_allow_html=True)
-    if _pm["mode"] != "MANUAL":
-        st.badge(f"Mode: {_pm['mode']}", icon=":material/auto_fix_high:", color="orange")
-    if st.button("↩ Use input price", key="btn_manual_price",
-                 disabled=(_pm["mode"] == "MANUAL")):
-        _pm["mode"] = "MANUAL"; _pm["solved_price"] = None
-        st.rerun()
+
+    # Always show an editable number_input — this IS the price control
+    _price_input_val = float(_eff_price) if _eff_price else 0.0
+    _new_manual = st.number_input(
+        "Product price", value=_price_input_val,
+        min_value=0.0, step=1.0, format="%.2f",
+        key=f"dash_price_{scenario_name}",
+        label_visibility="collapsed",
+        help=f"USD / {_price_unit}"
+    )
+    # If user typed a different value, switch to MANUAL mode
+    if abs(_new_manual - _price_input_val) > 0.005:
+        _pm["mode"]         = "MANUAL"
+        _pm["manual_price"] = _new_manual
+        _pm["solved_price"] = None
+        _eff_price          = _new_manual
+
+    st.markdown(f'<p style="font-size:.75rem;color:#6e7681;margin:.1rem 0 0 0">'
+                f'USD / {_price_unit}</p>', unsafe_allow_html=True)
+
+    # Mode badge
+    _mode_colors = {"USE_MSP": "green", "SET_NPV": "blue", "SET_IRR": "orange", "MANUAL": "gray"}
+    _mode_labels = {"USE_MSP": "MSP", "SET_NPV": "Set NPV", "SET_IRR": "Set IRR", "MANUAL": "Manual"}
+    st.badge(_mode_labels.get(_pm["mode"], "Manual"),
+             icon=":material/auto_fix_high:" if _pm["mode"] != "MANUAL" else ":material/edit:",
+             color=_mode_colors.get(_pm["mode"], "gray"))
 
 with _ctrl_cols[1]:
-    st.markdown('<p style="font-size:.82rem;color:#3fb950;margin:.5rem 0 .2rem 0">'
-                '① Use MSP (NPV = 0)</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:.85rem;color:#3fb950;margin:.3rem 0 .1rem 0">'
+                '① Minimum Selling Price</p>', unsafe_allow_html=True)
+    st.caption("Price at which NPV = 0")
     _use_msp = st.button("Calculate MSP", key="btn_use_msp",
-                          type="primary" if _pm["mode"]=="USE_MSP" else "secondary",
-                          use_container_width=True)
+                          type="primary" if _pm["mode"] == "USE_MSP" else "secondary",
+                          use_container_width=True, disabled=not _HAS_SCIPY)
     if _use_msp:
         with st.spinner("Solving for MSP…"):
-            _msp = _solve_price_for_npv(0.0)
-        if _msp:
-            _pm["mode"] = "USE_MSP"; _pm["solved_price"] = _msp
+            _msp_val = _solve_price_for_npv(0.0)
+        if _msp_val is not None and _msp_val > 0:
+            _pm["mode"]         = "USE_MSP"
+            _pm["solved_price"] = _msp_val
+            _pm["manual_price"] = None
+            _eff_price          = _msp_val
+            st.rerun()
         else:
             st.error("Could not solve MSP — check inputs.")
-        st.rerun()
-    if _pm["mode"] == "USE_MSP" and _pm.get("solved_price"):
-        st.caption(f"MSP = ${_pm['solved_price']:,.2f}/{_price_unit}")
 
 with _ctrl_cols[2]:
-    st.markdown('<p style="font-size:.82rem;color:#58a6ff;margin:.5rem 0 .2rem 0">'
-                '② Set NPV to target</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:.85rem;color:#58a6ff;margin:.3rem 0 .1rem 0">'
+                '② Set NPV target</p>', unsafe_allow_html=True)
     _npv_target_input = st.number_input(
         "Target NPV (MMUSD)", value=float(_pm.get("npv_target", 0.0)),
         step=1.0, format="%.1f", key=f"npv_target_{scenario_name}",
         label_visibility="collapsed")
     _pm["npv_target"] = _npv_target_input
-    _set_npv = st.button("Set NPV →", key="btn_set_npv",
-                          type="primary" if _pm["mode"]=="SET_NPV" else "secondary",
-                          use_container_width=True)
+    _set_npv = st.button("Apply →", key="btn_set_npv",
+                          type="primary" if _pm["mode"] == "SET_NPV" else "secondary",
+                          use_container_width=True, disabled=not _HAS_SCIPY)
     if _set_npv:
+        _target_usd = _npv_target_input * 1_000_000.0
         with st.spinner(f"Solving for NPV = {_npv_target_input:.1f} MMUSD…"):
-            _p_npv = _solve_price_for_npv(_npv_target_input * 1_000_000)
-        if _p_npv:
-            _pm["mode"] = "SET_NPV"; _pm["solved_price"] = _p_npv
+            _p_npv = _solve_price_for_npv(_target_usd)
+        if _p_npv is not None and _p_npv > 0:
+            _pm["mode"]         = "SET_NPV"
+            _pm["solved_price"] = _p_npv
+            _pm["manual_price"] = None
+            _eff_price          = _p_npv
+            st.rerun()
         else:
-            st.error("Could not solve price for target NPV.")
-        st.rerun()
+            st.error("Could not solve — target NPV may be unreachable.")
     if _pm["mode"] == "SET_NPV" and _pm.get("solved_price"):
-        st.caption(f"Price = ${_pm['solved_price']:,.2f}/{_price_unit}")
+        st.caption(f"→ Price = ${_pm['solved_price']:,.2f} / {_price_unit}")
 
 with _ctrl_cols[3]:
-    st.markdown('<p style="font-size:.82rem;color:#e6a817;margin:.5rem 0 .2rem 0">'
-                '③ Set IRR to target</p>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:.85rem;color:#e6a817;margin:.3rem 0 .1rem 0">'
+                '③ Set IRR target</p>', unsafe_allow_html=True)
     _irr_target_input = st.number_input(
         "Target IRR (%)", value=float(_pm.get("irr_target", _fa_marr * 100)),
         step=0.1, format="%.2f", key=f"irr_target_{scenario_name}",
         label_visibility="collapsed")
     _pm["irr_target"] = _irr_target_input
-    _set_irr = st.button("Set IRR →", key="btn_set_irr",
-                          type="primary" if _pm["mode"]=="SET_IRR" else "secondary",
-                          use_container_width=True)
+    _set_irr = st.button("Apply →", key="btn_set_irr",
+                          type="primary" if _pm["mode"] == "SET_IRR" else "secondary",
+                          use_container_width=True,
+                          disabled=(not _HAS_SCIPY or not _HAS_NPF))
     if _set_irr:
         with st.spinner(f"Solving for IRR = {_irr_target_input:.2f}%…"):
             _p_irr = _solve_price_for_irr(_irr_target_input / 100.0)
-        if _p_irr:
-            _pm["mode"] = "SET_IRR"; _pm["solved_price"] = _p_irr
+        if _p_irr is not None and _p_irr > 0:
+            _pm["mode"]         = "SET_IRR"
+            _pm["solved_price"] = _p_irr
+            _pm["manual_price"] = None
+            _eff_price          = _p_irr
+            st.rerun()
         else:
-            st.error("Could not solve price for target IRR.")
-        st.rerun()
+            st.error("Could not solve — target IRR may be unreachable.")
     if _pm["mode"] == "SET_IRR" and _pm.get("solved_price"):
-        st.caption(f"Price = ${_pm['solved_price']:,.2f}/{_price_unit}")
+        st.caption(f"→ Price = ${_pm['solved_price']:,.2f} / {_price_unit}")
 
 st.space("small")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# COMPUTE THREE SCENARIO CURVES
+# GUARD — need a valid price to compute curves
 # ─────────────────────────────────────────────────────────────────────────────
-_eff_price = _pm.get("solved_price") or _manual_price
-
-if _eff_price <= 0:
-    st.warning("Set a product selling price (Input Data → Other Premises) or use MSP mode.",
+if not _eff_price or _eff_price <= 0:
+    st.warning("Enter a selling price above, or click 'Calculate MSP'.",
                icon=":material/warning:")
     st.stop()
 
