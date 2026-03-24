@@ -2405,262 +2405,339 @@ st.space("medium")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SECTION 5: PROJECT COST & REVENUE COMPOSITION
-# Per-unit breakdown at steady-state, single Sankey diagram
+# Two Sankeys + three combined views
 # ═════════════════════════════════════════════════════════════════════════════
 st.markdown("---")
 st.markdown("### Project Cost & Revenue Composition")
 st.caption(
     "Per-unit breakdown at steady-state (full capacity, no growth effects). "
-    f"Functional unit: 1 {_prod_unit} of {d.get('Product Name','product')}."
+    f"Functional unit: 1 {_prod_unit} of {d.get('Product Name', 'product')}."
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
-# STEADY-STATE YEAR — op index 2 (3rd operational year, full capacity)
+# STEADY-STATE PER-UNIT CALCULATIONS
 # ─────────────────────────────────────────────────────────────────────────────
-_ss_oi  = min(2, _op - 1)   # op index (0-based)
-_ss_cap = _cpct(_ss_oi)     # capacity fraction (should be 1.0 at steady state)
-_ss_fp  = _fpct(_ss_oi)     # fixed cost fraction
-
-# Annual production at steady state
-_ss_prod = _wif_cap * _ss_cap   # units/year
+_ss_oi   = min(2, _op - 1)
+_ss_cap  = _cpct(_ss_oi)
+_ss_fp   = _fpct(_ss_oi)
+_ss_prod = _wif_cap * _ss_cap
 
 if _ss_prod <= 0:
     st.warning("Annual production is zero — check capacity inputs.", icon=":material/warning:")
     st.stop()
 
-# ── Per-unit cost components (USD/unit) ───────────────────────────────────────
-# Variable costs — scale with capacity
-_u_rm    = _rm_base  * _ss_cap / _ss_prod * _ss_prod / _wif_cap  # = _rm_base / _wif_cap
-_u_cu    = _cu_base  * _ss_cap / _ss_prod * _ss_prod / _wif_cap
-# Simplified: per-unit = annual_cost_at_full_cap / annual_production
-_u_rm    = _rm_base  / _wif_cap   # USD/unit
-_u_cu    = _cu_base  / _wif_cap
+_u_rm  = _rm_base / _wif_cap
+_u_cu  = _cu_base / _wif_cap
+_u_lab = _lab_base * _ss_fp / _ss_prod
+_u_sm  = _sm_base  * _ss_fp / _ss_prod
+_u_afc = _afc_base * _ss_fp / _ss_prod
+_u_ifc = _ifc_base * _ss_fp / _ss_prod
 
-# Fixed costs — per unit = annual_fixed / annual_production_at_ss
-_u_lab   = _lab_base * _ss_fp / _ss_prod
-_u_sm    = _sm_base  * _ss_fp / _ss_prod
-_u_afc   = _afc_base * _ss_fp / _ss_prod
-_u_ifc   = _ifc_base * _ss_fp / _ss_prod
+_ss_rev_yr = _eff_price * _ss_prod + _bp_base * _ss_cap
+_ss_var_yr = -(_rm_base * _ss_cap + _cu_base * _ss_cap + _lab_base * _ss_fp)
+_ss_fix_yr = -(_sm_base * _ss_fp + _afc_base * _ss_fp + _ifc_base * _ss_fp)
+_ss_dep_yr = -(_capex - _capex * _fa_resid_pct) / _fa_dep_yrs if _ss_oi < _fa_dep_yrs else 0.0
+_u_tax     = max(0.0, _ss_rev_yr + _ss_var_yr + _ss_fix_yr + _ss_dep_yr) * _fa_tax / _ss_prod
 
-# Taxes per unit — from steady-state CF calculation
-_ss_rev     = _eff_price * _wif_cap * _ss_cap + _bp_base * _ss_cap
-_ss_var     = -(_rm_base * _ss_cap + _cu_base * _ss_cap + _lab_base * _ss_fp)
-_ss_fix     = -(_sm_base * _ss_fp + _afc_base * _ss_fp + _ifc_base * _ss_fp)
-_ss_dep     = -(_capex - _capex * _fa_resid_pct) / _fa_dep_yrs if _ss_oi < _fa_dep_yrs else 0.0
-_ss_ebt     = _ss_rev + _ss_var + _ss_fix + _ss_dep
-_ss_tax_yr  = max(0.0, _ss_ebt) * _fa_tax
-_u_tax      = _ss_tax_yr / _ss_prod
-
-# ROI per unit = (TIC × MARR) / annual production
-_ss_tic     = _capex + _wc + _startup + (_fa_land_buy if _fa_land_opt == "Buy" else 0.0)
-_u_roi      = (_ss_tic * _fa_marr) / _ss_prod
-
-# Carbon costs — always 0 for now (future-proof)
+_ss_tic_val    = _capex + _wc + _startup + (_fa_land_buy if _fa_land_opt == "Buy" else 0.0)
+_u_roi         = (_ss_tic_val * _fa_marr) / _ss_prod
 _u_carbon_cost = 0.0
 
-# Total cost per unit
-_u_total_cost = (_u_rm + _u_cu + _u_lab + _u_sm + _u_afc
-                 + _u_ifc + _u_tax + _u_roi + _u_carbon_cost)
+_u_main       = _eff_price
+_u_byprod     = _bp_base / _wif_cap if _wif_cap > 0 else 0.0
+_u_carbon_rev = 0.0
+_u_fin_rev    = 0.0
 
-# ── Per-unit revenue components (USD/unit) ────────────────────────────────────
-_u_main    = _eff_price                         # main product
-_u_byprod  = _bp_base / _wif_cap                # byproducts per unit
-_u_carbon_rev = 0.0                             # carbon credits
-_u_fin_rev = 0.0                                # financial revenue (not shown if no financing)
-
-_u_total_rev = _u_main + _u_byprod + _u_carbon_rev + _u_fin_rev
-
-# Net margin per unit (surplus above cost of capital)
+_u_total_cost = _u_rm + _u_cu + _u_lab + _u_sm + _u_afc + _u_ifc + _u_tax + _u_roi + _u_carbon_cost
+_u_total_rev  = _u_main + _u_byprod + _u_carbon_rev + (_u_fin_rev if _fa_leveraged else 0.0)
 _u_net_margin = max(0.0, _u_total_rev - _u_total_cost)
+_pu = f"USD/{_prod_unit}"
+
+_LAYOUT = dict(
+    paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
+    font=dict(family="Inter, sans-serif", color="#c9d1d9", size=11),
+    margin=dict(l=10, r=10, t=50, b=10),
+    height=400,
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LAYOUT: left summary table | right Sankey
+# SUMMARY TABLE  +  TWO SANKEYS
 # ─────────────────────────────────────────────────────────────────────────────
-_tbl_col, _snk_col = st.columns([1, 2])
+section_header("Per-unit breakdown", "#58a6ff")
+_tbl_col, _cost_snk_col, _rev_snk_col = st.columns([1, 1.5, 1.5])
 
 with _tbl_col:
-    def _tbl_row(label, value, bold=False, color="#c9d1d9", indent=False):
+    def _row(label, val, bold=False, indent=False):
         fw = "font-weight:700;" if bold else ""
-        pad = "padding-left:1rem;" if indent else ""
-        val_str = f"{value:,.2f}" if value != 0 else "—"
-        val_color = "#e6a817" if bold else color
+        pl = "padding-left:.8rem;" if indent else ""
+        vc = "#e6a817" if bold else "#c9d1d9"
+        vs = f"{val:,.2f}" if val != 0 else "—"
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;'
-            f'padding:.25rem .5rem;border-bottom:1px solid #21262d22;">'
-            f'<span style="font-size:.82rem;color:{color};{fw}{pad}">{label}</span>'
-            f'<span style="font-size:.82rem;font-family:DM Mono,monospace;'
-            f'color:{val_color};{fw}">{val_str}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+            f'padding:.2rem .4rem;border-bottom:1px solid #21262d33;">'
+            f'<span style="font-size:.79rem;color:#8b949e;{fw}{pl}">{label}</span>'
+            f'<span style="font-size:.79rem;font-family:DM Mono,monospace;color:{vc};{fw}">{vs}</span>'
+            f'</div>', unsafe_allow_html=True)
 
-    def _tbl_header(label, unit_label=""):
+    def _hdr(label, unit=""):
         st.markdown(
             f'<div style="display:flex;justify-content:space-between;'
-            f'padding:.3rem .5rem;background:#1f2937;margin-top:.3rem;">'
-            f'<span style="font-size:.78rem;color:#58a6ff;font-weight:700;'
-            f'text-transform:uppercase;letter-spacing:.05em">{label}</span>'
-            f'<span style="font-size:.75rem;color:#8b949e">{unit_label}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+            f'padding:.25rem .4rem;background:#1f2937;margin-top:.2rem">'
+            f'<span style="font-size:.72rem;color:#58a6ff;font-weight:700;'
+            f'letter-spacing:.05em;text-transform:uppercase">{label}</span>'
+            f'<span style="font-size:.7rem;color:#8b949e">{unit}</span>'
+            f'</div>', unsafe_allow_html=True)
 
-    _prod_name = d.get("Product Name", "Product")
-    _cap_label = f"{_wif_cap:,.2f} {_prod_unit}/year"
-
-    _tbl_header("Annual capacity", _prod_unit + "/year")
-    _tbl_row(_prod_name, _wif_cap)
-
-    _tbl_header("Project costs", f"USD/{_prod_unit}")
-    _tbl_row("Raw materials",        _u_rm,    indent=True, color="#8b949e")
-    _tbl_row("Chemical inputs & util.", _u_cu, indent=True, color="#8b949e")
-    _tbl_row("Labor",                _u_lab,   indent=True, color="#8b949e")
-    _tbl_row("Supply & maintenance", _u_sm,    indent=True, color="#8b949e")
-    _tbl_row("Additional fixed costs",_u_afc,  indent=True, color="#8b949e")
-    _tbl_row("Indirect fixed costs", _u_ifc,   indent=True, color="#8b949e")
-    _tbl_row("Carbon emission",      _u_carbon_cost, indent=True, color="#8b949e")
-    _tbl_row("Taxes",                _u_tax,   indent=True, color="#8b949e")
-    _tbl_row("Project costs",        _u_total_cost, bold=True)
-    _tbl_row("Return on investment", _u_roi,   bold=True)
-
-    _tbl_header("Project revenue", f"USD/{_prod_unit}")
-    _tbl_row("Main product",         _u_main,    indent=True, color="#8b949e")
-    _tbl_row("Byproducts",           _u_byprod,  indent=True, color="#8b949e")
-    _tbl_row("Carbon capture",       _u_carbon_rev, indent=True, color="#8b949e")
+    _hdr("Annual capacity", f"{_prod_unit}/yr")
+    _row(d.get("Product Name", "Product"), _wif_cap, bold=True)
+    _hdr("Project costs", _pu)
+    _row("Raw materials",            _u_rm,          indent=True)
+    _row("Chem. inputs & util.",     _u_cu,          indent=True)
+    _row("Labor",                    _u_lab,         indent=True)
+    _row("Supply & maintenance",     _u_sm,          indent=True)
+    _row("Additional fixed costs",   _u_afc,         indent=True)
+    _row("Indirect fixed costs",     _u_ifc,         indent=True)
+    _row("Carbon emission",          _u_carbon_cost, indent=True)
+    _row("Taxes",                    _u_tax,         indent=True)
+    _row("Project costs",            _u_total_cost,  bold=True)
+    _row("ROI (cost of capital)",    _u_roi,         bold=True)
+    _hdr("Project revenue", _pu)
+    _row("Main product",             _u_main,        indent=True)
+    _row("Byproducts",               _u_byprod,      indent=True)
+    _row("Carbon capture",           _u_carbon_rev,  indent=True)
     if _fa_leveraged:
-        _tbl_row("Financial revenue", _u_fin_rev, indent=True, color="#8b949e")
-    _tbl_row("Project revenue",      _u_total_rev, bold=True)
+        _row("Financial revenue",    _u_fin_rev,     indent=True)
+    _row("Project revenue",          _u_total_rev,   bold=True)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SANKEY DIAGRAM
-# Single full-width Sankey: Revenue sources → CENTER → Cost destinations
-#
-# Node layout:
-#   Left:   Revenue source nodes  (Main product, Byproducts, [Carbon, Financial])
-#   Center: Single bridge node    ("Revenue = Cost")
-#   Right:  Cost destination nodes (RM, CU, Labor, S&M, AFC, IFC, Taxes, ROI, [Net margin])
-#
-# All values in USD/unit. Flows must sum to same total on both sides.
-# ─────────────────────────────────────────────────────────────────────────────
-with _snk_col:
-    # Build node list dynamically (skip zero-value nodes)
-    _nodes  = []   # {"label": str, "color": str}
-    _source = []
-    _target = []
-    _value  = []
-    _link_colors = []
-
-    def _add_node(label, color):
-        _nodes.append({"label": label, "color": color})
-        return len(_nodes) - 1
-
-    # Center node
-    _ctr_lbl = f"Total<br>{_u_total_rev:,.1f} USD/{_prod_unit}"
-    _ctr_idx = _add_node(_ctr_lbl, "#58a6ff")
-
-    # ── Revenue sources → CENTER ──────────────────────────────────────────────
-    _rev_items = [
-        (f"Main product<br>{_u_main:,.1f}", _u_main,   "#3fb950", "rgba(63,185,80,0.4)"),
-        (f"Byproducts<br>{_u_byprod:,.1f}", _u_byprod, "#79c0ff", "rgba(121,192,255,0.4)"),
-    ]
-    if _u_carbon_rev > 0.01:
-        _rev_items.append((f"Carbon credits<br>{_u_carbon_rev:,.1f}", _u_carbon_rev,
-                           "#a8dadc", "rgba(168,218,220,0.4)"))
-    if _fa_leveraged and _u_fin_rev > 0.01:
-        _rev_items.append((f"Financial revenue<br>{_u_fin_rev:,.1f}", _u_fin_rev,
-                           "#8b949e", "rgba(139,148,158,0.4)"))
-
-    for lbl, val, clr, lclr in _rev_items:
-        if val > 0.001:
-            idx = _add_node(lbl, clr)
-            _source.append(idx); _target.append(_ctr_idx)
-            _value.append(val);  _link_colors.append(lclr)
-
-    # ── CENTER → Cost destinations ────────────────────────────────────────────
-    _cost_items = [
-        (f"Raw materials<br>{_u_rm:,.1f}",          _u_rm,          "#f85149", "rgba(248,81,73,0.35)"),
-        (f"Chem. inputs & util.<br>{_u_cu:,.1f}",   _u_cu,          "#ffa657", "rgba(255,166,87,0.35)"),
-        (f"Labor<br>{_u_lab:,.1f}",                 _u_lab,         "#e6a817", "rgba(230,168,23,0.35)"),
-        (f"Supply & maint.<br>{_u_sm:,.1f}",        _u_sm,          "#d2a8ff", "rgba(210,168,255,0.35)"),
-        (f"AFC<br>{_u_afc:,.1f}",                   _u_afc,         "#ff7b72", "rgba(255,123,114,0.35)"),
-        (f"Indirect fixed<br>{_u_ifc:,.1f}",        _u_ifc,         "#79c0ff", "rgba(121,192,255,0.35)"),
-        (f"Taxes<br>{_u_tax:,.1f}",                 _u_tax,         "#8b949e", "rgba(139,148,158,0.35)"),
-        (f"ROI (cost of capital)<br>{_u_roi:,.1f}", _u_roi,         "#3fb950", "rgba(63,185,80,0.35)"),
+# ── COST SANKEY: single source → categories ───────────────────────────────────
+with _cost_snk_col:
+    _ci = [
+        (f"Raw materials<br>{_u_rm:.1f}<br>({_u_rm/_u_total_cost*100:.0f}%)",
+         _u_rm,  "#f85149", "rgba(248,81,73,0.4)"),
+        (f"Chem. inputs & util.<br>{_u_cu:.1f}<br>({_u_cu/_u_total_cost*100:.0f}%)",
+         _u_cu,  "#ffa657", "rgba(255,166,87,0.4)"),
+        (f"Labor<br>{_u_lab:.1f}<br>({_u_lab/_u_total_cost*100:.0f}%)",
+         _u_lab, "#e6a817", "rgba(230,168,23,0.4)"),
+        (f"Supply & maint.<br>{_u_sm:.1f}<br>({_u_sm/_u_total_cost*100:.0f}%)",
+         _u_sm,  "#d2a8ff", "rgba(210,168,255,0.4)"),
+        (f"AFC<br>{_u_afc:.1f}<br>({_u_afc/_u_total_cost*100:.0f}%)",
+         _u_afc, "#ff7b72", "rgba(255,123,114,0.4)"),
+        (f"Indirect fixed<br>{_u_ifc:.1f}<br>({_u_ifc/_u_total_cost*100:.0f}%)",
+         _u_ifc, "#79c0ff", "rgba(121,192,255,0.4)"),
+        (f"Taxes<br>{_u_tax:.1f}<br>({_u_tax/_u_total_cost*100:.0f}%)",
+         _u_tax, "#8b949e", "rgba(139,148,158,0.4)"),
+        (f"ROI<br>{_u_roi:.1f}<br>({_u_roi/_u_total_cost*100:.0f}%)",
+         _u_roi, "#3fb950", "rgba(63,185,80,0.4)"),
     ]
     if _u_carbon_cost > 0.001:
-        _cost_items.append(
-            (f"Carbon costs<br>{_u_carbon_cost:,.1f}", _u_carbon_cost,
-             "#58a6ff", "rgba(88,166,255,0.35)"))
-    if _u_net_margin > 0.01:
-        _cost_items.append(
-            (f"Net margin<br>{_u_net_margin:,.1f}", _u_net_margin,
-             "#238636", "rgba(35,134,54,0.35)"))
+        _ci.append((f"Carbon<br>{_u_carbon_cost:.1f}<br>({_u_carbon_cost/_u_total_cost*100:.0f}%)",
+                    _u_carbon_cost, "#58a6ff", "rgba(88,166,255,0.4)"))
+    _ci = [(l, v, c, lc) for l, v, c, lc in _ci if v > 0.001]
 
-    for lbl, val, clr, lclr in _cost_items:
-        if val > 0.001:
-            idx = _add_node(lbl, clr)
-            _source.append(_ctr_idx); _target.append(idx)
-            _value.append(val);       _link_colors.append(lclr)
+    _c_src_lbl = f"Total cost<br>{_u_total_cost:.1f} {_pu}"
+    _c_nodes   = [_c_src_lbl] + [l for l, *_ in _ci]
+    _c_colors  = ["#58a6ff"]  + [c for _, _, c, _ in _ci]
 
-    # Build Plotly Sankey
-    _node_labels = [n["label"] for n in _nodes]
-    _node_colors = [n["color"] for n in _nodes]
-
-    _fig_snk = go.Figure(go.Sankey(
+    _fig_cost = go.Figure(go.Sankey(
         arrangement="snap",
-        node=dict(
-            pad=20,
-            thickness=24,
-            line=dict(color="#21262d", width=0.5),
-            label=_node_labels,
-            color=_node_colors,
-            hovertemplate="%{label}<extra></extra>",
-        ),
-        link=dict(
-            source=_source,
-            target=_target,
-            value=_value,
-            color=_link_colors,
-            hovertemplate=(
-                "%{source.label} → %{target.label}<br>"
-                f"%{{value:,.2f}} USD/{_prod_unit}"
-                "<extra></extra>"
-            ),
-        ),
+        node=dict(pad=15, thickness=20, line=dict(color="#21262d", width=0.5),
+                  label=_c_nodes, color=_c_colors,
+                  hovertemplate="%{label}<extra></extra>"),
+        link=dict(source=[0]*len(_ci), target=list(range(1, len(_ci)+1)),
+                  value=[v for _, v, *_ in _ci],
+                  color=[lc for _, _, _, lc in _ci],
+                  hovertemplate="%{target.label}<extra></extra>"),
     ))
+    _fig_cost.update_layout(**_LAYOUT,
+        title=dict(text=f"Cost breakdown  ·  {_u_total_cost:.1f} {_pu}",
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+    st.plotly_chart(_fig_cost, use_container_width=True)
 
-    _fig_snk.update_layout(
-        paper_bgcolor="#0d1117",
-        font=dict(family="Inter, sans-serif", color="#c9d1d9", size=11),
-        margin=dict(l=10, r=10, t=30, b=10),
-        height=480,
-        title=dict(
-            text=(
-                f"Cost & Revenue Composition  ·  "
-                f"{_eff_price:,.2f} USD/{_prod_unit}  ·  "
-                f"{_wif_cap:,.0f} {_prod_unit}/yr capacity"
-            ),
-            font=dict(size=12, color="#8b949e"),
-            x=0.5, xanchor="center",
-        ),
+# ── REVENUE SANKEY: categories → single target ────────────────────────────────
+with _rev_snk_col:
+    _ri = [
+        (f"Main product<br>{_u_main:.1f}<br>({_u_main/_u_total_rev*100:.0f}%)",
+         _u_main,   "#3fb950", "rgba(63,185,80,0.4)"),
+        (f"Byproducts<br>{_u_byprod:.1f}<br>({_u_byprod/_u_total_rev*100:.0f}%)",
+         _u_byprod, "#79c0ff", "rgba(121,192,255,0.4)"),
+    ]
+    if _u_carbon_rev > 0.001:
+        _ri.append((f"Carbon capture<br>{_u_carbon_rev:.1f}<br>({_u_carbon_rev/_u_total_rev*100:.0f}%)",
+                    _u_carbon_rev, "#a8dadc", "rgba(168,218,220,0.4)"))
+    if _fa_leveraged and _u_fin_rev > 0.001:
+        _ri.append((f"Financial rev.<br>{_u_fin_rev:.1f}<br>({_u_fin_rev/_u_total_rev*100:.0f}%)",
+                    _u_fin_rev, "#d2a8ff", "rgba(210,168,255,0.4)"))
+    _ri = [(l, v, c, lc) for l, v, c, lc in _ri if v > 0.001]
+    _nr = len(_ri)
+
+    _r_tgt_lbl = f"Total revenue<br>{_u_total_rev:.1f} {_pu}"
+    _r_nodes   = [l for l, *_ in _ri] + [_r_tgt_lbl]
+    _r_colors  = [c for _, _, c, _ in _ri] + ["#3fb950"]
+
+    _fig_rev = go.Figure(go.Sankey(
+        arrangement="snap",
+        node=dict(pad=15, thickness=20, line=dict(color="#21262d", width=0.5),
+                  label=_r_nodes, color=_r_colors,
+                  hovertemplate="%{label}<extra></extra>"),
+        link=dict(source=list(range(_nr)), target=[_nr]*_nr,
+                  value=[v for _, v, *_ in _ri],
+                  color=[lc for _, _, _, lc in _ri],
+                  hovertemplate="%{source.label}<extra></extra>"),
+    ))
+    _fig_rev.update_layout(**_LAYOUT,
+        title=dict(text=f"Revenue breakdown  ·  {_u_total_rev:.1f} {_pu}",
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+    st.plotly_chart(_fig_rev, use_container_width=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THREE COMBINED VIEWS
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("---")
+section_header("Combined cost–revenue analysis", "#e6a817")
+st.caption("Three views of the same data — choose what resonates best with your clients.")
+
+_tabs = st.tabs([
+    "① Waterfall — revenue to net margin",
+    "② Diverging bar — costs vs revenues",
+    "③ Bridge — cost stack vs revenue stack",
+])
+
+# ── WATERFALL ─────────────────────────────────────────────────────────────────
+with _tabs[0]:
+    st.caption("Revenue minus each cost step by step — shows exactly where every USD goes.")
+    _wf_x = [
+        f"Revenue<br>{_u_total_rev:.1f}",
+        f"Raw mat.<br>−{_u_rm:.1f}",
+        f"Chem. inp.<br>−{_u_cu:.1f}",
+        f"Labor<br>−{_u_lab:.1f}",
+        f"S&M<br>−{_u_sm:.1f}",
+        f"AFC<br>−{_u_afc:.1f}",
+        f"Indirect<br>−{_u_ifc:.1f}",
+        f"Taxes<br>−{_u_tax:.1f}",
+        f"ROI<br>−{_u_roi:.1f}",
+        f"Net margin<br>{_u_net_margin:.1f}",
+    ]
+    _wf_y   = [_u_total_rev, -_u_rm, -_u_cu, -_u_lab, -_u_sm, -_u_afc, -_u_ifc, -_u_tax, -_u_roi, _u_net_margin]
+    _wf_msr = ["absolute"] + ["relative"] * 8 + ["total"]
+    _wf_clr = ["#3fb950","#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#58a6ff","#238636"]
+
+    _fig_wf = go.Figure(go.Waterfall(
+        orientation="v", measure=_wf_msr, x=_wf_x, y=_wf_y,
+        text=[f"{abs(v):.1f}" for v in _wf_y], textposition="outside",
+        textfont=dict(size=9, color="#c9d1d9"),
+        connector=dict(line=dict(color="#30363d", width=1, dash="dot")),
+        increasing=dict(marker=dict(color="#3fb950")),
+        decreasing=dict(marker=dict(color="#f85149")),
+        totals=dict(marker=dict(color="#238636")),
+    ))
+    _fig_wf.update_traces(marker_color=_wf_clr)
+    _fig_wf.update_layout(**{**_LAYOUT, "height": 420, "showlegend": False},
+        yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
+        xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+        title=dict(text=f"Cost waterfall  ·  {_pu}",
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+    st.plotly_chart(_fig_wf, use_container_width=True)
+
+# ── DIVERGING BAR ─────────────────────────────────────────────────────────────
+with _tabs[1]:
+    st.caption("Costs extend left, revenues right — balanced view at the functional unit level.")
+    _div_cats   = ["Raw materials","Chem. inputs & util.","Labor","S&M","AFC","Indirect fixed","Taxes","ROI"]
+    _div_cvals  = [_u_rm, _u_cu, _u_lab, _u_sm, _u_afc, _u_ifc, _u_tax, _u_roi]
+    _div_cclrs  = ["#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#3fb950"]
+
+    _fig_div = go.Figure()
+    for cat, val, clr in zip(_div_cats, _div_cvals, _div_cclrs):
+        pct = val / _u_total_cost * 100
+        _fig_div.add_trace(go.Bar(
+            name=cat, orientation="h", y=[cat], x=[-val],
+            marker_color=clr,
+            text=[f"−{val:.1f} ({pct:.0f}%)"], textposition="auto",
+            textfont=dict(size=9),
+            hovertemplate=f"{cat}: {val:.2f} {_pu} ({pct:.1f}% of cost)<extra></extra>",
+        ))
+
+    # Revenue bars (positive)
+    for lbl, val, clr in zip(
+        ["Main product","Byproducts"], [_u_main,_u_byprod], ["#3fb950","#79c0ff"]
+    ):
+        if val > 0.001:
+            pct = val / _u_total_rev * 100
+            _fig_div.add_trace(go.Bar(
+                name=lbl, orientation="h", y=[lbl], x=[val],
+                marker_color=clr,
+                text=[f"+{val:.1f} ({pct:.0f}%)"], textposition="auto",
+                textfont=dict(size=9),
+                hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}% of revenue)<extra></extra>",
+            ))
+
+    _fig_div.update_layout(**{**_LAYOUT,"height":400,"showlegend":False},
+        barmode="overlay", bargap=0.2,
+        xaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d",
+                   zeroline=True, zerolinecolor="#484f58", zerolinewidth=2),
+        yaxis=dict(gridcolor="#21262d", linecolor="#30363d", autorange="reversed"),
+        title=dict(text=f"Costs (←) vs Revenues (→)  ·  {_pu}",
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+    st.plotly_chart(_fig_div, use_container_width=True)
+
+# ── BRIDGE ────────────────────────────────────────────────────────────────────
+with _tabs[2]:
+    st.caption("Stacked cost vs revenue side by side — gap is the net return to investors.")
+    _fig_br = go.Figure()
+
+    _cst_l = ["Raw mat.","Chem. inp.","Labor","S&M","AFC","Indirect","Taxes","ROI"]
+    _cst_v = [_u_rm,_u_cu,_u_lab,_u_sm,_u_afc,_u_ifc,_u_tax,_u_roi]
+    _cst_c = ["#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#3fb950"]
+
+    for lbl, val, clr in zip(_cst_l, _cst_v, _cst_c):
+        pct = val / _u_total_cost * 100
+        _fig_br.add_trace(go.Bar(
+            name=lbl, x=["Project costs"], y=[val], marker_color=clr, width=0.38,
+            text=[f"{pct:.0f}%"] if val/_u_total_cost > 0.03 else [""],
+            textposition="inside", textfont=dict(size=9, color="#0d1117"),
+            hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
+        ))
+
+    _rev_l = ["Main product","Byproducts"]
+    _rev_v = [_u_main, _u_byprod]
+    _rev_c = ["#3fb950","#79c0ff"]
+    if _u_carbon_rev > 0.001:
+        _rev_l.append("Carbon"); _rev_v.append(_u_carbon_rev); _rev_c.append("#a8dadc")
+
+    for lbl, val, clr in zip(_rev_l, _rev_v, _rev_c):
+        pct = val / _u_total_rev * 100
+        _fig_br.add_trace(go.Bar(
+            name=lbl, x=["Project revenue"], y=[val], marker_color=clr, width=0.38,
+            text=[f"{pct:.0f}%"] if val/_u_total_rev > 0.03 else [""],
+            textposition="inside", textfont=dict(size=9, color="#0d1117"),
+            hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
+        ))
+
+    # Annotate the gap
+    _gap = _u_total_rev - _u_total_cost
+    _fig_br.add_annotation(
+        x=0.5, xref="paper",
+        y=min(_u_total_cost, _u_total_rev) + abs(_gap)/2,
+        text=f"Δ {_gap:+.1f} {_pu}<br>Net margin",
+        showarrow=False, font=dict(size=10, color="#e6a817"),
+        bgcolor="#161b22", bordercolor="#e6a817", borderwidth=1, borderpad=4,
     )
+    # Dashed lines at totals
+    for _yv, _lbl, _clr in [
+        (_u_total_cost, f"Cost: {_u_total_cost:.1f}", "#f85149"),
+        (_u_total_rev,  f"Revenue: {_u_total_rev:.1f}", "#3fb950"),
+    ]:
+        _fig_br.add_hline(y=_yv, line_dash="dot", line_color=_clr, line_width=1,
+                          annotation_text=_lbl,
+                          annotation_font=dict(size=9, color=_clr),
+                          annotation_position="right")
 
-    st.plotly_chart(_fig_snk, use_container_width=True)
-
-    # Quick KPI strip below Sankey
-    _kpi_c = st.columns(4)
-    with _kpi_c[0]:
-        kpi_card("Total cost/unit", f"${_u_total_cost:,.2f}", "#f85149",
-                 "excl. ROI", f"${_u_total_cost-_u_roi:,.2f}")
-    with _kpi_c[1]:
-        kpi_card("ROI/unit", f"${_u_roi:,.2f}", "#e6a817",
-                 "MARR", f"{_fa_marr*100:.2f}%")
-    with _kpi_c[2]:
-        kpi_card("Revenue/unit", f"${_u_total_rev:,.2f}", "#3fb950",
-                 "Byproduct share", f"{_u_byprod/_u_total_rev*100:.1f}%" if _u_total_rev > 0 else "—")
-    with _kpi_c[3]:
-        _margin_pct = _u_net_margin / _u_total_rev * 100 if _u_total_rev > 0 else 0
-        kpi_card("Net margin/unit", f"${_u_net_margin:,.2f}", "#58a6ff",
-                 "of revenue", f"{_margin_pct:.1f}%")
+    _fig_br.update_layout(**{**_LAYOUT,"height":480,"showlegend":False},
+        barmode="stack", bargroupgap=0.3,
+        yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
+        xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+        title=dict(
+            text=f"Cost ({_u_total_cost:.1f})  vs  Revenue ({_u_total_rev:.1f})  ·  {_pu}",
+            font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+    st.plotly_chart(_fig_br, use_container_width=True)
 
 st.space("medium")
