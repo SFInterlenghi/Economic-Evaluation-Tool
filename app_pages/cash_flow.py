@@ -2605,139 +2605,172 @@ _tabs = st.tabs([
 # ── WATERFALL ─────────────────────────────────────────────────────────────────
 with _tabs[0]:
     st.caption("Revenue minus each cost step by step — shows exactly where every USD goes.")
-    _wf_x = [
-        f"Revenue<br>{_u_total_rev:.1f}",
-        f"Raw mat.<br>−{_u_rm:.1f}",
-        f"Chem. inp.<br>−{_u_cu:.1f}",
-        f"Labor<br>−{_u_lab:.1f}",
-        f"S&M<br>−{_u_sm:.1f}",
-        f"AFC<br>−{_u_afc:.1f}",
-        f"Indirect<br>−{_u_ifc:.1f}",
-        f"Taxes<br>−{_u_tax:.1f}",
-        f"ROI<br>−{_u_roi:.1f}",
-        f"Net margin<br>{_u_net_margin:.1f}",
-    ]
-    _wf_y   = [_u_total_rev, -_u_rm, -_u_cu, -_u_lab, -_u_sm, -_u_afc, -_u_ifc, -_u_tax, -_u_roi, _u_net_margin]
-    _wf_msr = ["absolute"] + ["relative"] * 8 + ["total"]
-    _wf_clr = ["#3fb950","#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#58a6ff","#238636"]
 
+    _wf_labels = [
+        f"Revenue",
+        f"Raw mat.", f"Chem. inp.", f"Labor", f"S&M",
+        f"AFC", f"Indirect", f"Taxes", f"ROI",
+        f"Net margin",
+    ]
+    _wf_y   = [_u_total_rev, -_u_rm, -_u_cu, -_u_lab, -_u_sm,
+               -_u_afc, -_u_ifc, -_u_tax, -_u_roi, _u_net_margin]
+    _wf_msr = ["absolute"] + ["relative"] * 8 + ["total"]
+    _wf_txt = [f"{_u_total_rev:.1f}",
+               f"−{_u_rm:.1f}", f"−{_u_cu:.1f}", f"−{_u_lab:.1f}", f"−{_u_sm:.1f}",
+               f"−{_u_afc:.1f}", f"−{_u_ifc:.1f}", f"−{_u_tax:.1f}", f"−{_u_roi:.1f}",
+               f"{_u_net_margin:.1f}"]
+
+    # go.Waterfall only accepts increasing/decreasing/totals for colors — no per-bar override
     _fig_wf = go.Figure(go.Waterfall(
-        orientation="v", measure=_wf_msr, x=_wf_x, y=_wf_y,
-        text=[f"{abs(v):.1f}" for v in _wf_y], textposition="outside",
+        orientation="v",
+        measure=_wf_msr,
+        x=_wf_labels,
+        y=_wf_y,
+        text=_wf_txt,
+        textposition="outside",
         textfont=dict(size=9, color="#c9d1d9"),
         connector=dict(line=dict(color="#30363d", width=1, dash="dot")),
-        increasing=dict(marker=dict(color="#3fb950")),
-        decreasing=dict(marker=dict(color="#f85149")),
-        totals=dict(marker=dict(color="#238636")),
+        increasing=dict(marker=dict(color="#3fb950", line=dict(color="#238636", width=0.5))),
+        decreasing=dict(marker=dict(color="#f85149", line=dict(color="#b91c1c", width=0.5))),
+        totals=dict(marker=dict(color="#58a6ff", line=dict(color="#1d4ed8", width=0.8))),
+        hovertemplate="%{x}: %{y:.2f} " + _pu + "<extra></extra>",
     ))
-    _fig_wf.update_traces(marker_color=_wf_clr)
-    _fig_wf.update_layout(**{**_LAYOUT, "height": 420, "showlegend": False},
+    _fig_wf.update_layout(
+        **{**_LAYOUT, "height": 430, "showlegend": False},
         yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
         xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
         title=dict(text=f"Cost waterfall  ·  {_pu}",
-                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
+    )
     st.plotly_chart(_fig_wf, use_container_width=True)
 
 # ── DIVERGING BAR ─────────────────────────────────────────────────────────────
 with _tabs[1]:
     st.caption("Costs extend left, revenues right — balanced view at the functional unit level.")
-    _div_cats   = ["Raw materials","Chem. inputs & util.","Labor","S&M","AFC","Indirect fixed","Taxes","ROI"]
-    _div_cvals  = [_u_rm, _u_cu, _u_lab, _u_sm, _u_afc, _u_ifc, _u_tax, _u_roi]
-    _div_cclrs  = ["#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#3fb950"]
+
+    # Build unified category list with consistent y-axis
+    # Costs on left (negative x), revenues on right (positive x)
+    _all_cats  = ["Raw materials", "Chem. inputs & util.", "Labor", "S&M",
+                  "AFC", "Indirect fixed", "Taxes", "ROI",
+                  "Main product", "Byproducts"]
+    _all_x     = [-_u_rm, -_u_cu, -_u_lab, -_u_sm,
+                  -_u_afc, -_u_ifc, -_u_tax, -_u_roi,
+                  _u_main, _u_byprod]
+    _all_clrs  = ["#f85149","#ffa657","#e6a817","#d2a8ff",
+                  "#ff7b72","#79c0ff","#8b949e","#3fb950",
+                  "#3fb950","#79c0ff"]
+    _all_base  = ["cost"]*8 + ["revenue"]*2
 
     _fig_div = go.Figure()
-    for cat, val, clr in zip(_div_cats, _div_cvals, _div_cclrs):
-        pct = val / _u_total_cost * 100
+    for cat, xv, clr, base in zip(_all_cats, _all_x, _all_clrs, _all_base):
+        ref_val = abs(xv)
+        ref_tot = _u_total_cost if base == "cost" else _u_total_rev
+        pct = ref_val / ref_tot * 100 if ref_tot > 0 else 0
+        sign = "−" if xv < 0 else "+"
         _fig_div.add_trace(go.Bar(
-            name=cat, orientation="h", y=[cat], x=[-val],
+            name=cat,
+            orientation="h",
+            y=[cat],
+            x=[xv],
             marker_color=clr,
-            text=[f"−{val:.1f} ({pct:.0f}%)"], textposition="auto",
+            text=[f"{sign}{ref_val:.1f} ({pct:.0f}%)"],
+            textposition="auto",
             textfont=dict(size=9),
-            hovertemplate=f"{cat}: {val:.2f} {_pu} ({pct:.1f}% of cost)<extra></extra>",
+            hovertemplate=f"{cat}: {ref_val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
         ))
 
-    # Revenue bars (positive)
-    for lbl, val, clr in zip(
-        ["Main product","Byproducts"], [_u_main,_u_byprod], ["#3fb950","#79c0ff"]
-    ):
-        if val > 0.001:
-            pct = val / _u_total_rev * 100
-            _fig_div.add_trace(go.Bar(
-                name=lbl, orientation="h", y=[lbl], x=[val],
-                marker_color=clr,
-                text=[f"+{val:.1f} ({pct:.0f}%)"], textposition="auto",
-                textfont=dict(size=9),
-                hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}% of revenue)<extra></extra>",
-            ))
-
-    _fig_div.update_layout(**{**_LAYOUT,"height":400,"showlegend":False},
-        barmode="overlay", bargap=0.2,
-        xaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d",
-                   zeroline=True, zerolinecolor="#484f58", zerolinewidth=2),
-        yaxis=dict(gridcolor="#21262d", linecolor="#30363d", autorange="reversed"),
+    _fig_div.update_layout(
+        **{**_LAYOUT, "height": 440, "showlegend": False},
+        barmode="relative",
+        bargap=0.15,
+        xaxis=dict(
+            title=_pu, gridcolor="#21262d", linecolor="#30363d",
+            zeroline=True, zerolinecolor="#484f58", zerolinewidth=2,
+        ),
+        yaxis=dict(
+            gridcolor="#21262d", linecolor="#30363d",
+            autorange="reversed", categoryorder="array",
+            categoryarray=list(reversed(_all_cats)),
+        ),
         title=dict(text=f"Costs (←) vs Revenues (→)  ·  {_pu}",
-                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
+    )
     st.plotly_chart(_fig_div, use_container_width=True)
 
 # ── BRIDGE ────────────────────────────────────────────────────────────────────
 with _tabs[2]:
     st.caption("Stacked cost vs revenue side by side — gap is the net return to investors.")
+
     _fig_br = go.Figure()
 
-    _cst_l = ["Raw mat.","Chem. inp.","Labor","S&M","AFC","Indirect","Taxes","ROI"]
-    _cst_v = [_u_rm,_u_cu,_u_lab,_u_sm,_u_afc,_u_ifc,_u_tax,_u_roi]
+    _cst_l = ["Raw mat.", "Chem. inp.", "Labor", "S&M", "AFC", "Indirect", "Taxes", "ROI"]
+    _cst_v = [_u_rm, _u_cu, _u_lab, _u_sm, _u_afc, _u_ifc, _u_tax, _u_roi]
     _cst_c = ["#f85149","#ffa657","#e6a817","#d2a8ff","#ff7b72","#79c0ff","#8b949e","#3fb950"]
 
     for lbl, val, clr in zip(_cst_l, _cst_v, _cst_c):
         pct = val / _u_total_cost * 100
         _fig_br.add_trace(go.Bar(
-            name=lbl, x=["Project costs"], y=[val], marker_color=clr, width=0.38,
-            text=[f"{pct:.0f}%"] if val/_u_total_cost > 0.03 else [""],
-            textposition="inside", textfont=dict(size=9, color="#0d1117"),
+            name=lbl, x=["Project costs"], y=[val],
+            marker_color=clr, width=0.38,
+            text=[f"{pct:.0f}%"] if pct > 3 else [""],
+            textposition="inside",
+            textfont=dict(size=9, color="#0d1117"),
             hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
         ))
 
-    _rev_l = ["Main product","Byproducts"]
+    _rev_l = ["Main product", "Byproducts"]
     _rev_v = [_u_main, _u_byprod]
-    _rev_c = ["#3fb950","#79c0ff"]
+    _rev_c = ["#3fb950", "#79c0ff"]
     if _u_carbon_rev > 0.001:
         _rev_l.append("Carbon"); _rev_v.append(_u_carbon_rev); _rev_c.append("#a8dadc")
 
     for lbl, val, clr in zip(_rev_l, _rev_v, _rev_c):
         pct = val / _u_total_rev * 100
         _fig_br.add_trace(go.Bar(
-            name=lbl, x=["Project revenue"], y=[val], marker_color=clr, width=0.38,
-            text=[f"{pct:.0f}%"] if val/_u_total_rev > 0.03 else [""],
-            textposition="inside", textfont=dict(size=9, color="#0d1117"),
+            name=lbl, x=["Project revenue"], y=[val],
+            marker_color=clr, width=0.38,
+            text=[f"{pct:.0f}%"] if pct > 3 else [""],
+            textposition="inside",
+            textfont=dict(size=9, color="#0d1117"),
             hovertemplate=f"{lbl}: {val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
         ))
 
-    # Annotate the gap
+    # Gap annotation
     _gap = _u_total_rev - _u_total_cost
     _fig_br.add_annotation(
         x=0.5, xref="paper",
-        y=min(_u_total_cost, _u_total_rev) + abs(_gap)/2,
-        text=f"Δ {_gap:+.1f} {_pu}<br>Net margin",
-        showarrow=False, font=dict(size=10, color="#e6a817"),
+        y=min(_u_total_cost, _u_total_rev) + abs(_gap) / 2,
+        text=f"Δ {_gap:+.1f} {_pu}",
+        showarrow=False,
+        font=dict(size=10, color="#e6a817"),
         bgcolor="#161b22", bordercolor="#e6a817", borderwidth=1, borderpad=4,
     )
-    # Dashed lines at totals
+    # Dashed reference lines — use shapes instead of add_hline to avoid annotation_font dict issue
     for _yv, _lbl, _clr in [
-        (_u_total_cost, f"Cost: {_u_total_cost:.1f}", "#f85149"),
-        (_u_total_rev,  f"Revenue: {_u_total_rev:.1f}", "#3fb950"),
+        (_u_total_cost, f"Cost total: {_u_total_cost:.1f}", "#f85149"),
+        (_u_total_rev,  f"Revenue total: {_u_total_rev:.1f}", "#3fb950"),
     ]:
-        _fig_br.add_hline(y=_yv, line_dash="dot", line_color=_clr, line_width=1,
-                          annotation_text=_lbl,
-                          annotation_font=dict(size=9, color=_clr),
-                          annotation_position="right")
+        _fig_br.add_shape(
+            type="line", x0=0, x1=1, xref="paper",
+            y0=_yv, y1=_yv, yref="y",
+            line=dict(color=_clr, width=1, dash="dot"),
+        )
+        _fig_br.add_annotation(
+            x=1.01, xref="paper", y=_yv, yref="y",
+            text=_lbl, showarrow=False, xanchor="left",
+            font=dict(size=9, color=_clr),
+        )
 
-    _fig_br.update_layout(**{**_LAYOUT,"height":480,"showlegend":False},
+    _fig_br.update_layout(
+        **{**_LAYOUT, "height": 500, "showlegend": False},
         barmode="stack", bargroupgap=0.3,
         yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
         xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
+        margin=dict(l=10, r=120, t=50, b=10),  # extra right margin for annotations
         title=dict(
             text=f"Cost ({_u_total_cost:.1f})  vs  Revenue ({_u_total_rev:.1f})  ·  {_pu}",
-            font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"))
+            font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
+    )
     st.plotly_chart(_fig_br, use_container_width=True)
 
 st.space("medium")
