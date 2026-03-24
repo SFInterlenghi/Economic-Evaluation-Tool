@@ -1820,8 +1820,8 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
     Returns (cf_list, accum_pv_list, calendar_years).
     """
     _c   = _capex   * capex_mult
-    _wc  = _wc_val  * capex_mult
-    _su  = _su_val  * capex_mult
+    _lc_wc  = _wc      * capex_mult
+    _lc_su  = _startup * capex_mult
     _dep_sl_v = -(_c - _c * _fa_resid_pct) / _fa_dep_yrs if _fa_dep_yrs > 0 else 0.0
 
     _fracs = _fa_capex_fracs   # already normalised, len == _fa_epc_yrs
@@ -1834,9 +1834,9 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
 
         # Investment
         inv = -_c * _fracs[i] if is_epc else 0.0
-        if i == _epc - 1:    inv += -_wc
-        if oi == _op - 1:    inv += +_wc
-        if oi == 0:          inv += -_su
+        if i == _epc - 1:    inv += -_lc_wc
+        if oi == _op - 1:    inv += +_lc_wc
+        if oi == 0:          inv += -_lc_su
         if i == 0:           inv += -(_fa_land_buy * capex_mult
                                        if _fa_land_opt == "Buy" else 0.0)
 
@@ -2082,7 +2082,7 @@ _cal_yrs = [_y0 + i for i in range(_total)]
 # ─────────────────────────────────────────────────────────────────────────────
 def _indicators(cfs, acpv, capex_mult=1.0):
     _c   = _capex * capex_mult
-    _tic = (_c + _wc_val * capex_mult + _su_val * capex_mult
+    _tic = (_c + _wc * capex_mult + _startup * capex_mult
             + (_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0))
     npv_ = acpv[-1]
     irr_ = _irr_from_cfs(cfs)
@@ -2102,7 +2102,7 @@ def _indicators(cfs, acpv, capex_mult=1.0):
     avg_np = np.mean(op_cfs) if op_cfs else 0.0
 
     # ROI = (sum Net Profit + sum Investment) / project_lifetime
-    sum_inv = sum(cfs[:_epc]) + (-_wc_val * capex_mult) + (-_su_val * capex_mult)
+    sum_inv = sum(cfs[:_epc]) + (-_wc * capex_mult) + (-_startup * capex_mult)
     roi_val = (sum(op_cfs) + sum(cfs[:_epc])) / _op if _op > 0 else 0.0
 
     # Average revenues / OPEX for margin metrics (steady-state year, full capacity)
@@ -2181,12 +2181,12 @@ with summary_col:
     st.markdown(f'<p style="font-size:.75rem;color:#6e7681;margin:.3rem 0 .1rem 0">Product</p>', unsafe_allow_html=True)
     st.markdown(f'<p style="font-size:.82rem;color:#c9d1d9;font-weight:600;margin:0 0 .4rem 0">{_prod_name_disp}</p>', unsafe_allow_html=True)
 
-    _tic_lo_usd = _capex*_cm_lo + _wc_val*_cm_lo + _su_val*_cm_lo
-    _tic_hi_usd = _capex*_cm_hi + _wc_val*_cm_hi + _su_val*_cm_hi
+    _tic_lo_usd = _capex*_cm_lo + _wc*_cm_lo + _startup*_cm_lo
+    _tic_hi_usd = _capex*_cm_hi + _wc*_cm_hi + _startup*_cm_hi
     _kv("CAPEX (MMUSD)", _capex*_cm_lo/1e6, _capex/1e6, _capex*_cm_hi/1e6, fmt=".3f")
-    _kv("Working Capital (MMUSD)", _wc_val*_cm_lo/1e6, _wc_val/1e6, _wc_val*_cm_hi/1e6, fmt=".3f")
-    _kv("Start-up (MMUSD)", _su_val*_cm_lo/1e6, _su_val/1e6, _su_val*_cm_hi/1e6, fmt=".3f")
-    _kv("TIC (MMUSD)", _tic_lo_usd/1e6, (_capex+_wc_val+_su_val)/1e6, _tic_hi_usd/1e6, fmt=".3f")
+    _kv("Working Capital (MMUSD)", _wc*_cm_lo/1e6, _wc/1e6, _wc*_cm_hi/1e6, fmt=".3f")
+    _kv("Start-up (MMUSD)", _startup*_cm_lo/1e6, _startup/1e6, _startup*_cm_hi/1e6, fmt=".3f")
+    _kv("TIC (MMUSD)", _tic_lo_usd/1e6, (_capex+_wc+_startup)/1e6, _tic_hi_usd/1e6, fmt=".3f")
     _kv("OPEX (MMUSD/yr)", None, sum(abs(v) for v in [_sm_base,_afc_base,_ifc_base,_lab_base,_rm_base,_cu_base])/1e6, None, fmt=".3f")
 
     st.markdown("---")
