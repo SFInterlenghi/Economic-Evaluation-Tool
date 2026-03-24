@@ -2635,13 +2635,12 @@ with _tabs[0]:
         totals=dict(marker=dict(color="#58a6ff", line=dict(color="#1d4ed8", width=0.8))),
         hovertemplate="%{x}: %{y:.2f} " + _pu + "<extra></extra>",
     ))
-    _fig_wf.update_layout(
-        **{**_LAYOUT, "height": 430, "showlegend": False},
-        yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
-        xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
-        title=dict(text=f"Cost waterfall  ·  {_pu}",
-                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
-    )
+    _wf_layout = {**_LAYOUT, "height": 430, "showlegend": False}
+    _wf_layout["yaxis"] = dict(title=_pu, gridcolor="#21262d", linecolor="#30363d")
+    _wf_layout["xaxis"] = dict(gridcolor="#21262d", linecolor="#30363d")
+    _wf_layout["title"] = dict(text=f"Cost waterfall  ·  {_pu}",
+                                font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center")
+    _fig_wf.update_layout(**_wf_layout)
     st.plotly_chart(_fig_wf, use_container_width=True)
 
 # ── DIVERGING BAR ─────────────────────────────────────────────────────────────
@@ -2679,22 +2678,15 @@ with _tabs[1]:
             hovertemplate=f"{cat}: {ref_val:.2f} {_pu} ({pct:.1f}%)<extra></extra>",
         ))
 
-    _fig_div.update_layout(
-        **{**_LAYOUT, "height": 440, "showlegend": False},
-        barmode="relative",
-        bargap=0.15,
-        xaxis=dict(
-            title=_pu, gridcolor="#21262d", linecolor="#30363d",
-            zeroline=True, zerolinecolor="#484f58", zerolinewidth=2,
-        ),
-        yaxis=dict(
-            gridcolor="#21262d", linecolor="#30363d",
-            autorange="reversed", categoryorder="array",
-            categoryarray=list(reversed(_all_cats)),
-        ),
-        title=dict(text=f"Costs (←) vs Revenues (→)  ·  {_pu}",
-                   font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
-    )
+    _div_layout = {**_LAYOUT, "height": 440, "showlegend": False, "barmode": "relative", "bargap": 0.15}
+    _div_layout["xaxis"] = dict(title=_pu, gridcolor="#21262d", linecolor="#30363d",
+                                 zeroline=True, zerolinecolor="#484f58", zerolinewidth=2)
+    _div_layout["yaxis"] = dict(gridcolor="#21262d", linecolor="#30363d",
+                                 autorange="reversed", categoryorder="array",
+                                 categoryarray=list(reversed(_all_cats)))
+    _div_layout["title"] = dict(text=f"Costs (←) vs Revenues (→)  ·  {_pu}",
+                                 font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center")
+    _fig_div.update_layout(**_div_layout)
     st.plotly_chart(_fig_div, use_container_width=True)
 
 # ── BRIDGE ────────────────────────────────────────────────────────────────────
@@ -2761,16 +2753,15 @@ with _tabs[2]:
             font=dict(size=9, color=_clr),
         )
 
-    _fig_br.update_layout(
-        **{**_LAYOUT, "height": 500, "showlegend": False},
-        barmode="stack", bargroupgap=0.3,
-        yaxis=dict(title=_pu, gridcolor="#21262d", linecolor="#30363d"),
-        xaxis=dict(gridcolor="#21262d", linecolor="#30363d"),
-        margin=dict(l=10, r=120, t=50, b=10),  # extra right margin for annotations
-        title=dict(
-            text=f"Cost ({_u_total_cost:.1f})  vs  Revenue ({_u_total_rev:.1f})  ·  {_pu}",
-            font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center"),
-    )
+    _br_layout = {**_LAYOUT, "height": 500, "showlegend": False,
+                  "barmode": "stack", "bargroupgap": 0.3,
+                  "margin": dict(l=10, r=120, t=50, b=10)}
+    _br_layout["yaxis"] = dict(title=_pu, gridcolor="#21262d", linecolor="#30363d")
+    _br_layout["xaxis"] = dict(gridcolor="#21262d", linecolor="#30363d")
+    _br_layout["title"] = dict(
+        text=f"Cost ({_u_total_cost:.1f})  vs  Revenue ({_u_total_rev:.1f})  ·  {_pu}",
+        font=dict(size=11, color="#8b949e"), x=0.5, xanchor="center")
+    _fig_br.update_layout(**_br_layout)
     st.plotly_chart(_fig_br, use_container_width=True)
 
 st.space("medium")
