@@ -680,7 +680,7 @@ def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
     fw = "font-weight:600;" if bold else ""
     with c1:
         st.markdown(
-            f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.32rem 0;font-size:.9rem;'
             f'color:{label_color};{fw}">{label}</p>',
             unsafe_allow_html=True)
     if computed_val is not None:
@@ -688,7 +688,7 @@ def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
             disp = (f"{computed_val*100:{fmt}}%" if suffix == "%"
                     else f"{computed_val:{fmt}}{suffix}")
             st.markdown(
-                f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
+                f'<p style="margin:0;padding:.32rem 0;font-size:.9rem;'
                 f'font-family:DM Mono,monospace;color:#3fb950;font-weight:600;'
                 f'text-align:right">{disp}</p>', unsafe_allow_html=True)
         with c3:
@@ -698,6 +698,10 @@ def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
     current = _fin.get(key, base_val)
     wk = f"cffin_{scenario_name}_{key}"
     rk = f"cffinrst_{scenario_name}_{key}"
+    hint = (f"{float(base_val)*100:{fmt}}%" if suffix == "%"
+            else f"{base_val:{fmt}}{suffix}" if not is_int
+            else str(int(base_val)))
+
     with c2:
         if is_int:
             new_val = st.number_input(
@@ -705,10 +709,8 @@ def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
                 min_value=int(min_val) if min_val is not None else None,
                 step=1, key=wk, label_visibility="collapsed")
             _fset(key, int(new_val), base_val, is_int=True)
-            return int(new_val)
         else:
-            disp_val  = float(current) * 100.0 if suffix == "%" else float(current)
-            base_disp = float(base_val) * 100.0 if suffix == "%" else float(base_val)
+            disp_val = float(current) * 100.0 if suffix == "%" else float(current)
             mv = (float(min_val) * 100.0 if (min_val is not None and suffix == "%")
                   else float(min_val) if min_val is not None else None)
             new_disp = st.number_input(
@@ -717,17 +719,16 @@ def _fin_row(label, key, base_val, step=0.01, fmt=".2f", suffix="",
                 key=wk, label_visibility="collapsed")
             new_val = new_disp / 100.0 if suffix == "%" else new_disp
             _fset(key, new_val, base_val)
-            return new_val
+
     with c3:
-        hint = (f"{float(base_val)*100:{fmt}}%" if suffix == "%"
-                else f"{base_val:{fmt}}{suffix}" if not is_int
-                else str(int(base_val)))
+        # Bug fix: reset button must be rendered here, AFTER the input, not after return
         if st.button("↩", key=rk, help=f"Reset to: {hint}",
                      disabled=not mod, use_container_width=True):
             _fin.pop(key, None)
             st.session_state.pop(wk, None)
             st.rerun()
-    return _fin.get(key, base_val)
+
+    return int(new_val) if is_int else _fin.get(key, base_val)
 
 def _display_row(label, value, fmt=".4f", suffix="", bold=False, color="#6e7681"):
     c1, c2, _ = st.columns([3, 2, 1])
@@ -738,11 +739,11 @@ def _display_row(label, value, fmt=".4f", suffix="", bold=False, color="#6e7681"
         disp = f"{value}{suffix}"
     with c1:
         st.markdown(
-            f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.32rem 0;font-size:.9rem;'
             f'color:{color};{fw}">{label}</p>', unsafe_allow_html=True)
     with c2:
         st.markdown(
-            f'<p style="margin:0;padding:.32rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.32rem 0;font-size:.9rem;'
             f'font-family:DM Mono,monospace;color:{color};text-align:right;{fw}">'
             f'{disp}</p>', unsafe_allow_html=True)
 
@@ -799,7 +800,7 @@ with st.expander(
         _land_changed = _modified("Land Option")
         _lo_label_color = "#e6a817" if _land_changed else "#c9d1d9"
         st.markdown(
-            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.9rem;'
             f'color:{_lo_label_color}">Land option</p>', unsafe_allow_html=True)
         _land_sel = st.radio(
             "Land option", _land_options, index=_land_idx,
@@ -840,7 +841,7 @@ with st.expander(
         _dep_m_idx     = _dep_m_opts.index(_fin.get("Depreciation Method", _dep_m_base))
         _dep_m_changed = _modified("Depreciation Method")
         st.markdown(
-            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.9rem;'
             f'color:{"#e6a817" if _dep_m_changed else "#c9d1d9"}">Depreciation method</p>',
             unsafe_allow_html=True)
         _dep_m_sel = st.radio(
@@ -993,31 +994,35 @@ with st.expander(
         _tc_wk            = f"cffin_{scenario_name}_Tax Country"
         _tc_changed       = _modified("Tax Country")
         st.markdown(
-            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.9rem;'
             f'color:{"#e6a817" if _tc_changed else "#c9d1d9"}">Country</p>',
             unsafe_allow_html=True)
         _tc_idx = COUNTRY_LIST.index(_tax_country_cur) if _tax_country_cur in COUNTRY_LIST else 0
         _tc_sel = st.selectbox("Tax country", COUNTRY_LIST, index=_tc_idx,
                                key=_tc_wk, label_visibility="collapsed")
+
+        # Auto-update tax rate whenever country selection changes from previous render
+        _prev_country = _fin.get("_tax_country_prev", _tax_country_base)
+        if _tc_sel != _prev_country:
+            # Country changed — seed Tax Rate from reference table and clear widget key
+            _auto_tax = TAXES_BY_COUNTRY.get(_tc_sel, 0.34)
+            _fin["Tax Rate"] = _auto_tax
+            _fin["_tax_country_prev"] = _tc_sel
+            st.session_state.pop(f"cffin_{scenario_name}_Tax Rate", None)
+
         if _tc_sel != _tax_country_base:
             _fin["Tax Country"] = _tc_sel
-            # Auto-update tax rate from reference table when country changes
-            if _fin.get("_tax_country_prev") != _tc_sel:
-                _auto_tax = TAXES_BY_COUNTRY.get(_tc_sel, 0.34)
-                _fin["Tax Rate"] = _auto_tax
-                st.session_state.pop(f"cffin_{scenario_name}_Tax Rate", None)
-                _fin["_tax_country_prev"] = _tc_sel
         elif "Tax Country" in _fin:
             del _fin["Tax Country"]
 
-        _tax_ref_from_country = TAXES_BY_COUNTRY.get(
-            _fin.get("Tax Country", _tax_country_base), 0.34)
         _tax_base_val = safe_val(d, "Tax Rate", 0.34)
         if _tax_base_val > 1.0: _tax_base_val /= 100.0
+        # Use the auto-seeded Tax Rate if present, else scenario default
+        _tax_cur_val = _fin.get("Tax Rate", _tax_base_val)
 
         fa_tax_rate = _fin_row(
             "Tax rate", "Tax Rate",
-            _fin.get("Tax Rate", _tax_base_val),
+            _tax_cur_val,
             step=0.1, fmt=".1f", suffix="%")
 
         # FINANCING
@@ -1028,7 +1033,7 @@ with st.expander(
         _fin_t_idx  = _fin_t_opts.index(_fin.get("Financing Type", _fin_t_base))
         _fin_t_chg  = _modified("Financing Type")
         st.markdown(
-            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.82rem;'
+            f'<p style="margin:0;padding:.2rem 0 .1rem 0;font-size:.9rem;'
             f'color:{"#e6a817" if _fin_t_chg else "#c9d1d9"}">Financing type</p>',
             unsafe_allow_html=True)
         _fin_t_sel = st.radio(
@@ -1779,5 +1784,574 @@ with st.expander("**Cash Flow**", expanded=True, icon=":material/account_balance
         _peak_i = I_tot.index(min(I_tot))
         kpi_card("Peak Investment", smart_fmt(abs(min(I_tot))), "#e6a817",
                  "Year", str(_peak_i))
+
+st.space("medium")
+
+# ═════════════════════════════════════════════════════════════════════════════
+# SECTION 4: FINANCIAL DASHBOARD
+# NPV curve, MSP/NPV/IRR controls, scenario summary, KPI tables
+# ═════════════════════════════════════════════════════════════════════════════
+import numpy as np
+import plotly.graph_objects as go
+
+try:
+    import numpy_financial as npf
+    _HAS_NPF = True
+except ImportError:
+    _HAS_NPF = False
+
+try:
+    from scipy.optimize import brentq
+    _HAS_SCIPY = True
+except ImportError:
+    _HAS_SCIPY = False
+
+st.markdown("---")
+st.markdown("### Financial Dashboard")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CORE CF ENGINE — recomputes full CF for any product price & TIC multiplier
+# All parameters come from _fa_* and wif variables already in scope
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _build_cf_arrays(product_price, capex_mult=1.0):
+    """
+    Full year-by-year cash flow given a product price and a TIC multiplier.
+    Returns (cf_list, accum_pv_list, calendar_years).
+    """
+    _c   = _capex   * capex_mult
+    _wc  = _wc_val  * capex_mult
+    _su  = _su_val  * capex_mult
+    _dep_sl_v = -(_c - _c * _fa_resid_pct) / _fa_dep_yrs if _fa_dep_yrs > 0 else 0.0
+
+    _fracs = _fa_capex_fracs   # already normalised, len == _fa_epc_yrs
+
+    cfs = []; accum_pv = 0.0; pv_list = []; accum_list = []
+
+    for i in range(_total):
+        oi      = i - _epc
+        is_epc  = i < _epc
+
+        # Investment
+        inv = -_c * _fracs[i] if is_epc else 0.0
+        if i == _epc - 1:    inv += -_wc
+        if oi == _op - 1:    inv += +_wc
+        if oi == 0:          inv += -_su
+        if i == 0:           inv += -(_fa_land_buy * capex_mult
+                                       if _fa_land_opt == "Buy" else 0.0)
+
+        # Financing
+        f_int   = 0.0
+        f_amort = 0.0
+        if _fa_leveraged:
+            _tot_d = _c * _fa_debt_ratio
+            _accum_d_i = _tot_d  # simplified: use total debt for interest calc
+            f_int = -_accum_d_i * _fa_cod
+            _ann_r = _tot_d / _fa_amort_yrs if _fa_amort_yrs > 0 else 0.0
+            if oi >= _fa_grace_yrs and (oi - _fa_grace_yrs) < _fa_amort_yrs:
+                f_amort = -_ann_r
+
+        if is_epc:
+            cf = inv + f_int + f_amort
+            pv = cf / (1 + _fa_marr) ** i
+            accum_pv += pv
+            cfs.append(cf); pv_list.append(pv); accum_list.append(accum_pv)
+            continue
+
+        cp = _cpct(oi); fp = _fpct(oi)
+        g_main_f = (1 + _fa_g_main)   ** oi
+        g_bp_f   = (1 + _fa_g_byprod) ** oi
+        g_rm_f   = (1 + _fa_g_rm)     ** oi
+        g_cu_f   = (1 + _fa_g_cu)     ** oi
+        g_fc_f   = (1 + _fa_g_fc)     ** oi
+
+        # Revenue
+        main_rev   = product_price * _wif_cap * cp * g_main_f
+        byprod_rev = _bp_base * cp * g_bp_f
+        resid_rev  = _c * _fa_resid_pct if oi == _op - 1 else 0.0
+        rev        = main_rev + byprod_rev + resid_rev
+
+        # Costs
+        rm   = -(_rm_base  * cp * g_rm_f)
+        cu   = -(_cu_base  * cp * g_cu_f)
+        lab  = -(_lab_base * fp * g_fc_f)
+        sm   = -(_sm_base  * fp * g_fc_f)
+        afc  = -(_afc_base * fp * g_fc_f)
+        ifc  = -(_ifc_base * fp * g_fc_f)
+        rent = -(_fa_land_rent_yr * g_fc_f) if _fa_land_opt == "Rent" else 0.0
+        var  = rm + cu + lab
+        fix  = sm + afc + ifc + rent
+
+        dep  = (_dep_sl_v if oi < _fa_dep_yrs else 0.0) if _dep_method == "Straight Line" \
+               else (-_c * _MACRS[min(_MACRS.keys(), key=lambda k: abs(k-_fa_dep_yrs))][oi]
+                     if oi < len(_MACRS[min(_MACRS.keys(), key=lambda k: abs(k-_fa_dep_yrs))]) else 0.0)
+
+        ebt  = rev + var + fix + dep + f_int
+        tax  = -max(0.0, ebt) * _fa_tax
+        np_  = ebt + tax
+        cf   = np_ + f_amort + inv
+        pv   = cf / (1 + _fa_marr) ** i
+        accum_pv += pv
+        cfs.append(cf); pv_list.append(pv); accum_list.append(accum_pv)
+
+    return cfs, pv_list, accum_list
+
+
+def _npv_at_price(price, capex_mult=1.0):
+    _, _, accum = _build_cf_arrays(price, capex_mult)
+    return accum[-1]
+
+
+def _irr_from_cfs(cfs):
+    if not _HAS_NPF:
+        return None
+    try:
+        v = npf.irr(cfs)
+        return None if (v is None or np.isnan(v) or np.isinf(v)) else float(v)
+    except Exception:
+        return None
+
+
+def _solve_price_for_npv(target_npv, capex_mult=1.0):
+    """Find product price such that NPV = target_npv."""
+    if not _HAS_SCIPY:
+        return None
+    try:
+        return brentq(lambda p: _npv_at_price(p, capex_mult) - target_npv,
+                      0.001, 1_000_000.0, xtol=0.01, maxiter=200)
+    except Exception:
+        return None
+
+
+def _solve_price_for_irr(target_irr, capex_mult=1.0):
+    """Find product price such that IRR = target_irr."""
+    if not _HAS_SCIPY or not _HAS_NPF:
+        return None
+    def irr_err(p):
+        cfs, _, _ = _build_cf_arrays(p, capex_mult)
+        v = _irr_from_cfs(cfs)
+        return (v - target_irr) if v is not None else -target_irr
+    # Scan for bracket
+    scan = [100, 500, 1000, 2000, 5000, 10000, 50000]
+    irrs = [(p, irr_err(p)) for p in scan]
+    lo = [p for p, e in irrs if e < 0]
+    hi = [p for p, e in irrs if e > 0]
+    if not lo or not hi:
+        return None
+    try:
+        return brentq(irr_err, max(lo), min(hi) * 2, xtol=0.01, maxiter=200)
+    except Exception:
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TIC BOUNDS
+# ─────────────────────────────────────────────────────────────────────────────
+_tic_lo_pct = safe_val(d, "TIC Lower Pct", None)   # e.g. -25.0
+_tic_hi_pct = safe_val(d, "TIC Upper Pct", None)   # e.g. 40.0
+_has_bounds = (_tic_lo_pct is not None and _tic_hi_pct is not None
+               and _tic_lo_pct != 0 and _tic_hi_pct != 0)
+_cm_lo = 1.0 + (_tic_lo_pct / 100.0) if _has_bounds else 0.75
+_cm_hi = 1.0 + (_tic_hi_pct / 100.0) if _has_bounds else 1.40
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRODUCT PRICE STATE
+# Three mutually exclusive modes: USE_MSP | SET_NPV | SET_IRR | MANUAL
+# Stored in st.session_state.cf_price_mode[scenario]
+# ─────────────────────────────────────────────────────────────────────────────
+if "cf_price_mode" not in st.session_state:
+    st.session_state.cf_price_mode = {}
+if scenario_name not in st.session_state.cf_price_mode:
+    st.session_state.cf_price_mode[scenario_name] = {
+        "mode": "MANUAL",
+        "npv_target": 0.0,
+        "irr_target": _fa_marr * 100.0,
+        "solved_price": None,
+    }
+
+_pm = st.session_state.cf_price_mode[scenario_name]
+
+# Effective product price: solved if mode != MANUAL, else from input
+_manual_price = safe_val(d, "Main Product Price", 0.0)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONTROL ROW — MSP / Set NPV / Set IRR buttons + inputs
+# ─────────────────────────────────────────────────────────────────────────────
+st.markdown("#### Price & NPV Controls")
+_ctrl_cols = st.columns([2, 3, 3, 3])
+
+with _ctrl_cols[0]:
+    st.markdown('<p style="font-size:.82rem;color:#8b949e;margin:.5rem 0 .2rem 0">'
+                'Main product selling price</p>', unsafe_allow_html=True)
+    _price_display = (_pm.get("solved_price") or _manual_price)
+    _price_unit = d.get("Unit", "")
+    color_p = "#e6a817" if _pm["mode"] != "MANUAL" else "#c9d1d9"
+    st.markdown(
+        f'<p style="font-size:1.3rem;font-family:DM Mono,monospace;'
+        f'color:{color_p};font-weight:700;margin:0">'
+        f'${_price_display:,.2f} / {_price_unit}</p>',
+        unsafe_allow_html=True)
+    if _pm["mode"] != "MANUAL":
+        st.badge(f"Mode: {_pm['mode']}", icon=":material/auto_fix_high:", color="orange")
+    if st.button("↩ Use input price", key="btn_manual_price",
+                 disabled=(_pm["mode"] == "MANUAL")):
+        _pm["mode"] = "MANUAL"; _pm["solved_price"] = None
+        st.rerun()
+
+with _ctrl_cols[1]:
+    st.markdown('<p style="font-size:.82rem;color:#3fb950;margin:.5rem 0 .2rem 0">'
+                '① Use MSP (NPV = 0)</p>', unsafe_allow_html=True)
+    _use_msp = st.button("Calculate MSP", key="btn_use_msp",
+                          type="primary" if _pm["mode"]=="USE_MSP" else "secondary",
+                          use_container_width=True)
+    if _use_msp:
+        with st.spinner("Solving for MSP…"):
+            _msp = _solve_price_for_npv(0.0)
+        if _msp:
+            _pm["mode"] = "USE_MSP"; _pm["solved_price"] = _msp
+        else:
+            st.error("Could not solve MSP — check inputs.")
+        st.rerun()
+    if _pm["mode"] == "USE_MSP" and _pm.get("solved_price"):
+        st.caption(f"MSP = ${_pm['solved_price']:,.2f}/{_price_unit}")
+
+with _ctrl_cols[2]:
+    st.markdown('<p style="font-size:.82rem;color:#58a6ff;margin:.5rem 0 .2rem 0">'
+                '② Set NPV to target</p>', unsafe_allow_html=True)
+    _npv_target_input = st.number_input(
+        "Target NPV (MMUSD)", value=float(_pm.get("npv_target", 0.0)),
+        step=1.0, format="%.1f", key=f"npv_target_{scenario_name}",
+        label_visibility="collapsed")
+    _pm["npv_target"] = _npv_target_input
+    _set_npv = st.button("Set NPV →", key="btn_set_npv",
+                          type="primary" if _pm["mode"]=="SET_NPV" else "secondary",
+                          use_container_width=True)
+    if _set_npv:
+        with st.spinner(f"Solving for NPV = {_npv_target_input:.1f} MMUSD…"):
+            _p_npv = _solve_price_for_npv(_npv_target_input * 1_000_000)
+        if _p_npv:
+            _pm["mode"] = "SET_NPV"; _pm["solved_price"] = _p_npv
+        else:
+            st.error("Could not solve price for target NPV.")
+        st.rerun()
+    if _pm["mode"] == "SET_NPV" and _pm.get("solved_price"):
+        st.caption(f"Price = ${_pm['solved_price']:,.2f}/{_price_unit}")
+
+with _ctrl_cols[3]:
+    st.markdown('<p style="font-size:.82rem;color:#e6a817;margin:.5rem 0 .2rem 0">'
+                '③ Set IRR to target</p>', unsafe_allow_html=True)
+    _irr_target_input = st.number_input(
+        "Target IRR (%)", value=float(_pm.get("irr_target", _fa_marr * 100)),
+        step=0.1, format="%.2f", key=f"irr_target_{scenario_name}",
+        label_visibility="collapsed")
+    _pm["irr_target"] = _irr_target_input
+    _set_irr = st.button("Set IRR →", key="btn_set_irr",
+                          type="primary" if _pm["mode"]=="SET_IRR" else "secondary",
+                          use_container_width=True)
+    if _set_irr:
+        with st.spinner(f"Solving for IRR = {_irr_target_input:.2f}%…"):
+            _p_irr = _solve_price_for_irr(_irr_target_input / 100.0)
+        if _p_irr:
+            _pm["mode"] = "SET_IRR"; _pm["solved_price"] = _p_irr
+        else:
+            st.error("Could not solve price for target IRR.")
+        st.rerun()
+    if _pm["mode"] == "SET_IRR" and _pm.get("solved_price"):
+        st.caption(f"Price = ${_pm['solved_price']:,.2f}/{_price_unit}")
+
+st.space("small")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# COMPUTE THREE SCENARIO CURVES
+# ─────────────────────────────────────────────────────────────────────────────
+_eff_price = _pm.get("solved_price") or _manual_price
+
+if _eff_price <= 0:
+    st.warning("Set a product selling price (Input Data → Other Premises) or use MSP mode.",
+               icon=":material/warning:")
+    st.stop()
+
+_cfs_base, _pvs_base, _acpv_base = _build_cf_arrays(_eff_price, 1.0)
+_cfs_lo,   _pvs_lo,   _acpv_lo   = _build_cf_arrays(_eff_price, _cm_lo)
+_cfs_hi,   _pvs_hi,   _acpv_hi   = _build_cf_arrays(_eff_price, _cm_hi)
+
+_cal_yrs = [_y0 + i for i in range(_total)]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINANCIAL INDICATORS — base, lower TIC, upper TIC
+# ─────────────────────────────────────────────────────────────────────────────
+def _indicators(cfs, acpv, capex_mult=1.0):
+    _c   = _capex * capex_mult
+    _tic = (_c + _wc_val * capex_mult + _su_val * capex_mult
+            + (_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0))
+    npv_ = acpv[-1]
+    irr_ = _irr_from_cfs(cfs)
+
+    # MSP for this TIC scenario
+    msp_ = _solve_price_for_npv(0.0, capex_mult) if _HAS_SCIPY else None
+
+    # Payback: first project year where acpv >= 0
+    payback_ = next((i for i, v in enumerate(acpv) if v >= 0), None)
+    payback_op = (payback_ - _epc) if payback_ is not None else None
+
+    # Break-even period = payback (same definition confirmed by user)
+    breakeven_yr = payback_op
+
+    # Average annual net profit (operational years only)
+    op_cfs = cfs[_epc:]
+    avg_np = np.mean(op_cfs) if op_cfs else 0.0
+
+    # ROI = (sum Net Profit + sum Investment) / project_lifetime
+    sum_inv = sum(cfs[:_epc]) + (-_wc_val * capex_mult) + (-_su_val * capex_mult)
+    roi_val = (sum(op_cfs) + sum(cfs[:_epc])) / _op if _op > 0 else 0.0
+
+    # Average revenues / OPEX for margin metrics (steady-state year, full capacity)
+    # Use year _epc + 2 (3rd op year, full capacity, no startup) as representative
+    _ss_i = min(_epc + 2, _total - 1)
+    oi_ss = _ss_i - _epc
+    cp    = _cpct(oi_ss); fp = _fpct(oi_ss)
+    rev_ss = ((_eff_price * _wif_cap * cp * (1+_fa_g_main)**oi_ss)
+              + (_bp_base * cp * (1+_fa_g_byprod)**oi_ss))
+    var_ss = ((_rm_base  * cp * (1+_fa_g_rm)**oi_ss)
+              + (_cu_base * cp * (1+_fa_g_cu)**oi_ss)
+              + (_lab_base* fp * (1+_fa_g_fc)**oi_ss))
+    fix_ss = ((_sm_base  * fp * (1+_fa_g_fc)**oi_ss)
+              + (_afc_base* fp * (1+_fa_g_fc)**oi_ss)
+              + (_ifc_base* fp * (1+_fa_g_fc)**oi_ss))
+    dep_ss = -(_c - _c*_fa_resid_pct)/_fa_dep_yrs if oi_ss < _fa_dep_yrs else 0.0
+    gp_ss  = rev_ss - var_ss
+    ebitda_ss = gp_ss - fix_ss
+    ebit_ss   = ebitda_ss + dep_ss
+    ebt_ss    = ebit_ss
+    np_ss     = ebt_ss * (1 - _fa_tax)
+    equity_ss = _tic
+
+    gm_   = gp_ss    / rev_ss if rev_ss else 0.0
+    em_   = ebitda_ss/ rev_ss if rev_ss else 0.0
+    ebit_ = ebit_ss  / rev_ss if rev_ss else 0.0
+    npm_  = np_ss    / rev_ss if rev_ss else 0.0
+    roe_  = np_ss    / equity_ss if equity_ss else 0.0
+    roa_  = np_ss    / _tic if _tic else 0.0
+
+    # Average annual values for summary table
+    avg_ebitda = np.mean([cf for cf in op_cfs]) if op_cfs else 0.0
+
+    return {
+        "NPV": npv_, "IRR": irr_, "MSP": msp_,
+        "Payback": payback_op, "Breakeven": breakeven_yr,
+        "ROI": roi_val, "TIC": _tic,
+        "MARR": _fa_marr,
+        "Gross Margin": gm_, "EBITDA Margin": em_,
+        "EBIT Margin": ebit_, "Net Profit Margin": npm_,
+        "ROE": roe_, "ROA": roa_,
+        "Avg EBITDA": avg_ebitda, "Avg Net Profit": avg_np,
+    }
+
+_ind_base = _indicators(_cfs_base, _acpv_base, 1.0)
+_ind_lo   = _indicators(_cfs_lo,   _acpv_lo,   _cm_lo)
+_ind_hi   = _indicators(_cfs_hi,   _acpv_hi,   _cm_hi)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LAYOUT: graph left, scenario summary right
+# ─────────────────────────────────────────────────────────────────────────────
+graph_col, summary_col = st.columns([3, 1])
+
+with summary_col:
+    section_header("Scenario summary", "#58a6ff")
+
+    def _kv(label, val_lo, val_base, val_hi, unit="", fmt=".3f", pct=False):
+        """3-column KPI row: Lower | Result | Upper."""
+        def _f(v):
+            if v is None: return "—"
+            if pct: return f"{v*100:.2f}%"
+            if abs(v) >= 1e6: return f"{v/1e6:{fmt}}M"
+            return f"{v:{fmt}}"
+        c1,c2,c3 = st.columns(3)
+        with c1: st.markdown(f'<p style="font-size:.7rem;color:#8b949e;margin:0">{_f(val_lo)}</p>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<p style="font-size:.8rem;color:#c9d1d9;font-weight:600;text-align:center;margin:0">{_f(val_base)}</p>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<p style="font-size:.7rem;color:#8b949e;text-align:right;margin:0">{_f(val_hi)}</p>', unsafe_allow_html=True)
+        st.markdown(f'<p style="font-size:.7rem;color:#484f58;margin:0 0 .3rem 0">{label} {unit}</p>', unsafe_allow_html=True)
+
+    # Header
+    hc1,hc2,hc3 = st.columns(3)
+    for col,txt,clr in [(hc1,"Lower TIC","#8b949e"),(hc2,"Result","#c9d1d9"),(hc3,"Upper TIC","#8b949e")]:
+        with col: st.markdown(f'<p style="font-size:.68rem;color:{clr};font-weight:600;margin:0 0 .2rem 0">{txt}</p>', unsafe_allow_html=True)
+
+    _prod_name_disp = d.get("Product Name","—")
+    st.markdown(f'<p style="font-size:.75rem;color:#6e7681;margin:.3rem 0 .1rem 0">Product</p>', unsafe_allow_html=True)
+    st.markdown(f'<p style="font-size:.82rem;color:#c9d1d9;font-weight:600;margin:0 0 .4rem 0">{_prod_name_disp}</p>', unsafe_allow_html=True)
+
+    _tic_lo_usd = _capex*_cm_lo + _wc_val*_cm_lo + _su_val*_cm_lo
+    _tic_hi_usd = _capex*_cm_hi + _wc_val*_cm_hi + _su_val*_cm_hi
+    _kv("CAPEX (MMUSD)", _capex*_cm_lo/1e6, _capex/1e6, _capex*_cm_hi/1e6, fmt=".3f")
+    _kv("Working Capital (MMUSD)", _wc_val*_cm_lo/1e6, _wc_val/1e6, _wc_val*_cm_hi/1e6, fmt=".3f")
+    _kv("Start-up (MMUSD)", _su_val*_cm_lo/1e6, _su_val/1e6, _su_val*_cm_hi/1e6, fmt=".3f")
+    _kv("TIC (MMUSD)", _tic_lo_usd/1e6, (_capex+_wc_val+_su_val)/1e6, _tic_hi_usd/1e6, fmt=".3f")
+    _kv("OPEX (MMUSD/yr)", None, sum(abs(v) for v in [_sm_base,_afc_base,_ifc_base,_lab_base,_rm_base,_cu_base])/1e6, None, fmt=".3f")
+
+    st.markdown("---")
+    section_header("Financial indicators", "#e6a817")
+    hc1,hc2,hc3 = st.columns(3)
+    for col,txt in [(hc1,"Lower"),(hc2,"Result"),(hc3,"Upper")]:
+        with col: st.markdown(f'<p style="font-size:.68rem;color:#8b949e;font-weight:600;margin:0 0 .2rem 0">{txt}</p>', unsafe_allow_html=True)
+
+    _kv("MARR (%/yr)", None, _fa_marr, None, pct=True)
+    _kv("MSP (USD/unit)", _ind_lo["MSP"], _ind_base["MSP"], _ind_hi["MSP"], fmt=",.2f")
+    _kv("NPV (MMUSD)", _ind_lo["NPV"]/1e6, _ind_base["NPV"]/1e6, _ind_hi["NPV"]/1e6, fmt=".3f")
+    _kv("IRR (%/yr)", _ind_lo["IRR"], _ind_base["IRR"], _ind_hi["IRR"], pct=True)
+    _kv("Payback (years)", _ind_lo["Payback"], _ind_base["Payback"], _ind_hi["Payback"], fmt=".1f")
+    _kv("Break-even (years)", _ind_lo["Breakeven"], _ind_base["Breakeven"], _ind_hi["Breakeven"], fmt=".1f")
+    _kv("ROI (USD/yr)", _ind_lo["ROI"]/1e6, _ind_base["ROI"]/1e6, _ind_hi["ROI"]/1e6, fmt=".3f")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NPV GRAPH
+# ─────────────────────────────────────────────────────────────────────────────
+with graph_col:
+    section_header("Cumulative discounted cash flow", "#58a6ff")
+
+    # Convert to MMUSD for display
+    _acpv_b_M  = [v/1e6 for v in _acpv_base]
+    _acpv_lo_M = [v/1e6 for v in _acpv_lo]
+    _acpv_hi_M = [v/1e6 for v in _acpv_hi]
+
+    fig = go.Figure()
+
+    # Shaded band between bounds
+    fig.add_trace(go.Scatter(
+        x=_cal_yrs + _cal_yrs[::-1],
+        y=_acpv_hi_M + _acpv_lo_M[::-1],
+        fill='toself', fillcolor='rgba(88,166,255,0.06)',
+        line=dict(color='rgba(0,0,0,0)'), showlegend=False, hoverinfo='skip'
+    ))
+
+    # Upper TIC bound (red dashed)
+    _lo_lbl = f"Upper bound (+{_tic_hi_pct:.0f}% of TIC)" if _has_bounds else "Upper bound (+40%)"
+    fig.add_trace(go.Scatter(
+        x=_cal_yrs, y=_acpv_hi_M,
+        mode='lines', name=_lo_lbl,
+        line=dict(color='#f85149', dash='dash', width=1.5),
+        hovertemplate='%{x}: %{y:.1f} MMUSD<extra>Upper TIC</extra>'
+    ))
+
+    # Lower TIC bound (green dashed)
+    _hi_lbl = f"Lower bound ({_tic_lo_pct:.0f}% of TIC)" if _has_bounds else "Lower bound (-25%)"
+    fig.add_trace(go.Scatter(
+        x=_cal_yrs, y=_acpv_lo_M,
+        mode='lines', name=_hi_lbl,
+        line=dict(color='#3fb950', dash='dash', width=1.5),
+        hovertemplate='%{x}: %{y:.1f} MMUSD<extra>Lower TIC</extra>'
+    ))
+
+    # Base case (solid blue)
+    _npv_lbl = f"NPV = {_ind_base['NPV']/1e6:.1f} MMUSD"
+    fig.add_trace(go.Scatter(
+        x=_cal_yrs, y=_acpv_b_M,
+        mode='lines', name=f"Base case ({_npv_lbl})",
+        line=dict(color='#58a6ff', width=2.5),
+        hovertemplate='%{x}: %{y:.1f} MMUSD<extra>Base case</extra>'
+    ))
+
+    # Zero line
+    fig.add_hline(y=0, line_color='#484f58', line_width=1)
+
+    # EPC end annotation
+    _epc_end_yr = _y0 + _epc - 1
+    fig.add_vline(x=_epc_end_yr, line_dash='dot', line_color='#6e7681', line_width=1)
+    fig.add_annotation(x=_epc_end_yr, y=min(_acpv_b_M)*0.6,
+                       text="EPC", showarrow=False,
+                       font=dict(size=10, color='#6e7681'))
+
+    # Payback annotation
+    _pb = _ind_base["Payback"]
+    if _pb is not None:
+        _pb_yr = _y0 + _epc + _pb
+        if _pb_yr in _cal_yrs:
+            _pb_idx = _cal_yrs.index(_pb_yr)
+            fig.add_annotation(
+                x=_pb_yr, y=_acpv_b_M[_pb_idx] + max(_acpv_b_M)*0.05,
+                text=f"Payback<br>(Op. yr {_pb})",
+                showarrow=True, arrowhead=2, arrowcolor='#e6a817',
+                font=dict(size=9, color='#e6a817'), arrowsize=0.8
+            )
+
+    # NPV endpoint annotation
+    fig.add_annotation(
+        x=_cal_yrs[-1], y=_acpv_b_M[-1],
+        text=_npv_lbl, showarrow=True,
+        arrowhead=2, arrowcolor='#58a6ff',
+        font=dict(size=10, color='#58a6ff'),
+        xanchor='right', yanchor='bottom'
+    )
+
+    # Layout
+    fig.update_layout(
+        paper_bgcolor='#0d1117', plot_bgcolor='#161b22',
+        font=dict(family='Inter, sans-serif', color='#c9d1d9', size=11),
+        margin=dict(l=60, r=20, t=20, b=50),
+        height=420,
+        xaxis=dict(
+            title='Year', gridcolor='#21262d', linecolor='#30363d',
+            tickfont=dict(size=10), showgrid=True,
+        ),
+        yaxis=dict(
+            title='Cumulative discounted cash flow (MMUSD)',
+            gridcolor='#21262d', linecolor='#30363d',
+            tickfont=dict(size=10), showgrid=True, zeroline=False,
+        ),
+        legend=dict(
+            bgcolor='rgba(13,17,23,0.8)', bordercolor='#30363d',
+            borderwidth=1, font=dict(size=10),
+            x=0.02, y=0.98, xanchor='left', yanchor='top'
+        ),
+        hovermode='x unified',
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MARGIN KPI TABLE — 3×3 grid of Lower/Result/Upper per metric
+# ─────────────────────────────────────────────────────────────────────────────
+st.space("small")
+st.markdown("#### Profitability Metrics")
+
+_metrics = [
+    ("Gross margin",       "Gross Margin"),
+    ("EBITDA margin",      "EBITDA Margin"),
+    ("EBIT margin",        "EBIT Margin"),
+    ("Net profit margin",  "Net Profit Margin"),
+    ("Return on equity (ROE)", "ROE"),
+    ("Return on assets (ROA)", "ROA"),
+]
+
+def _metric_card(title, lo, base, hi):
+    def _fp(v): return f"{v*100:.2f}%" if v is not None else "—"
+    c = "#3fb950" if (base or 0) >= 0 else "#f85149"
+    st.markdown(
+        f'<div style="background:#161b22;border:1px solid #21262d;'
+        f'border-radius:6px;padding:.6rem .8rem;margin:.2rem 0">'
+        f'<p style="font-size:.7rem;color:#8b949e;margin:0 0 .3rem 0;'
+        f'font-weight:600;text-transform:uppercase;letter-spacing:.05em">{title}</p>'
+        f'<div style="display:flex;justify-content:space-between;align-items:baseline">'
+        f'<span style="font-size:.75rem;color:#6e7681">{_fp(lo)}</span>'
+        f'<span style="font-size:1rem;color:{c};font-weight:700;'
+        f'font-family:DM Mono,monospace">{_fp(base)}</span>'
+        f'<span style="font-size:.75rem;color:#6e7681">{_fp(hi)}</span>'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between">'
+        f'<span style="font-size:.62rem;color:#484f58">Lower</span>'
+        f'<span style="font-size:.62rem;color:#484f58">Result</span>'
+        f'<span style="font-size:.62rem;color:#484f58">Upper</span>'
+        f'</div></div>',
+        unsafe_allow_html=True
+    )
+
+_mcols = st.columns(len(_metrics))
+for col, (title, key) in zip(_mcols, _metrics):
+    with col:
+        _metric_card(
+            title,
+            _ind_lo.get(key),
+            _ind_base.get(key),
+            _ind_hi.get(key),
+        )
 
 st.space("medium")
