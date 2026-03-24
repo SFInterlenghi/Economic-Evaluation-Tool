@@ -1140,3 +1140,224 @@ if _show_fin and is_leveraged:
     )
 
 st.space("medium")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE 5: CASH FLOW
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Depreciation schedule ─────────────────────────────────────────────────────
+dep_method_val = d.get("Depreciation Method", "Straight Line")
+dep_years_val  = int(safe_val(d, "Depreciation Years", 10))
+dep_annual_sl  = -(capex_val - residual_val_usd) / dep_years_val if dep_years_val > 0 else 0.0
+
+# MACRS reference table — IRS GDS half-year convention
+# Key = recovery period (years), value = list of annual rates (index 0 = recovery year 1)
+_MACRS_TABLE = {
+    3:  [0.3333, 0.4445, 0.1481, 0.0741],
+    5:  [0.2000, 0.3200, 0.1920, 0.1152, 0.1152, 0.0576],
+    7:  [0.1429, 0.2449, 0.1749, 0.1249, 0.0893, 0.0892, 0.0893, 0.0446],
+    10: [0.1000, 0.1800, 0.1440, 0.1152, 0.0922, 0.0737, 0.0655, 0.0655,
+         0.0656, 0.0655, 0.0328],
+    15: [0.0500, 0.0950, 0.0855, 0.0770, 0.0693, 0.0623, 0.0590, 0.0590,
+         0.0591, 0.0590, 0.0591, 0.0590, 0.0591, 0.0590, 0.0591, 0.0295],
+    20: [0.0375, 0.0722, 0.0668, 0.0618, 0.0571, 0.0528, 0.0489, 0.0452,
+         0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446, 0.0446,
+         0.0446, 0.0446, 0.0446, 0.0446, 0.0223],
+}
+_macrs_key   = min(_MACRS_TABLE.keys(), key=lambda k: abs(k - dep_years_val))
+_macrs_rates = _MACRS_TABLE[_macrs_key]
+
+def _dep(op_idx):
+    """Depreciation for operational year op_idx (0-based). Returns negative value (expense)."""
+    if dep_method_val == "Straight Line":
+        return dep_annual_sl if op_idx < dep_years_val else 0.0
+    else:  # MACRS
+        return (-capex_val * _macrs_rates[op_idx]) if op_idx < len(_macrs_rates) else 0.0
+
+# ── Tax rate and MARR ─────────────────────────────────────────────────────────
+tax_rate_val = safe_val(d, "Tax Rate", 0.34)
+if tax_rate_val > 1.0:
+    tax_rate_val /= 100.0
+
+marr_val = safe_val(d, "MARR", 0.12)
+if marr_val > 1.0:
+    marr_val /= 100.0
+
+# ── Build cash flow arrays ────────────────────────────────────────────────────
+cf_revenue     = []
+cf_var_labor   = []
+cf_gross_profit= []
+cf_fixed       = []
+cf_ebitda      = []
+cf_depreciation= []
+cf_ebit        = []
+cf_fin_int_col = []
+cf_ebt         = []
+cf_taxes       = []
+cf_net_profit  = []
+cf_amortization= []
+cf_proj_inv    = []
+cf_cashflow    = []
+cf_pv_cf       = []
+cf_accum_pv    = []
+
+_accum_pv = 0.0
+
+for i in range(total_years):
+    op_idx = i - epc_years
+    is_epc = i < epc_years
+
+    # Always-active columns from other modules
+    proj_inv_i = inv_total[i]
+    fin_int_i  = fin_interest[i] if is_leveraged else 0.0
+    amort_i    = fin_amort[i]    if is_leveraged else 0.0
+
+    if is_epc:
+        # EPC: only investment + financing + cash flow columns are populated
+        cf_revenue.append(None);      cf_var_labor.append(None)
+        cf_gross_profit.append(None); cf_fixed.append(None)
+        cf_ebitda.append(None);       cf_depreciation.append(None)
+        cf_ebit.append(None);         cf_ebt.append(None)
+        cf_taxes.append(None);        cf_net_profit.append(None)
+
+        cf_fin_int_col.append(fin_int_i)
+        cf_amortization.append(amort_i)
+        cf_proj_inv.append(proj_inv_i)
+
+        cash_flow_i = proj_inv_i + fin_int_i + amort_i
+        pv_i        = cash_flow_i / (1 + marr_val) ** i
+        _accum_pv  += pv_i
+
+        cf_cashflow.append(cash_flow_i)
+        cf_pv_cf.append(pv_i)
+        cf_accum_pv.append(_accum_pv)
+        continue
+
+    # ── Operational rows ──────────────────────────────────────────────────────
+    # Revenue (already computed in module 2, index aligned)
+    rev_i  = rev_total[i]
+
+    # Variable & Labor = RM + CU + Carbon (0) + Labor  (all negative)
+    var_i  = exp_rm[i] + exp_cu[i] + 0.0 + exp_labor[i]
+
+    # Fixed Costs = S&M + AFC + IFC + Land Rent  (all negative)
+    fix_i  = exp_sm[i] + exp_afc[i] + exp_ifc[i] + exp_rent[i]
+
+    # Income statement chain
+    gp_i      = rev_i + var_i
+    ebitda_i  = gp_i  + fix_i
+    dep_i     = _dep(op_idx)
+    ebit_i    = ebitda_i + dep_i
+    ebt_i     = ebit_i   + fin_int_i
+    tax_i     = -max(0.0, ebt_i) * tax_rate_val   # 0 on losses, negative outflow otherwise
+    np_i      = ebt_i    + tax_i
+
+    # Cash Flow = Net Profit + Amortization (debt repayment) + Project Investment
+    cash_flow_i = np_i + amort_i + proj_inv_i
+    pv_i        = cash_flow_i / (1 + marr_val) ** i
+    _accum_pv  += pv_i
+
+    cf_revenue.append(rev_i);          cf_var_labor.append(var_i)
+    cf_gross_profit.append(gp_i);      cf_fixed.append(fix_i)
+    cf_ebitda.append(ebitda_i);        cf_depreciation.append(dep_i)
+    cf_ebit.append(ebit_i);            cf_fin_int_col.append(fin_int_i)
+    cf_ebt.append(ebt_i);              cf_taxes.append(tax_i)
+    cf_net_profit.append(np_i);        cf_amortization.append(amort_i)
+    cf_proj_inv.append(proj_inv_i);    cf_cashflow.append(cash_flow_i)
+    cf_pv_cf.append(pv_i);             cf_accum_pv.append(_accum_pv)
+
+npv_val = _accum_pv   # final accumulated PV = NPV
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FORMATTING FOR TABLE — None values (EPC non-applicable) display as "—"
+# ─────────────────────────────────────────────────────────────────────────────
+def _fmt_cf_col(values):
+    """Format cash flow column — None → '—', 0 → '—', else ±accounting notation."""
+    out = []
+    for v in values:
+        if v is None:
+            out.append("—")
+        else:
+            out.append(_fmt_val(v))
+    return out
+
+# ── Summary KPIs ──────────────────────────────────────────────────────────────
+section_header("Module 5 — Cash Flow", "#58a6ff")
+
+npv_color = "#3fb950" if npv_val >= 0 else "#f85149"
+k1, k2, k3, k4 = st.columns(4)
+with k1:
+    kpi_card("NPV", smart_fmt(npv_val), npv_color,
+             "Discount rate", f"MARR = {marr_val*100:.2f}%")
+with k2:
+    # IRR approximation note — full IRR requires scipy, flag for next iteration
+    kpi_card("Depreciation Method", dep_method_val, "#8b949e",
+             "Period", f"{dep_years_val} years")
+with k3:
+    kpi_card("Tax Rate", f"{tax_rate_val*100:.1f}%", "#8b949e",
+             "Country", d.get("Tax Country", "—"))
+with k4:
+    _peak_inv = min(inv_total)   # most negative investment year
+    kpi_card("Peak Investment Year", smart_fmt(abs(_peak_inv)), "#e6a817",
+             "Yr", str(inv_total.index(_peak_inv)))
+
+st.space("small")
+
+# ── Detail table ──────────────────────────────────────────────────────────────
+if st.toggle("Show cash flow detail", key="tog_cf", value=True):
+    _cf_headers = [
+        "Calendar Year", "Proj. Year", "Op. Year",
+        "Revenue", "Var. & Labor", "Gross Profit",
+        "Fixed Costs", "EBITDA", "Depreciation",
+        "EBIT", "Fin. Interest", "EBT",
+        "Taxes", "Net Profit", "Amortization",
+        "Proj. Investment", "Cash Flow", "Present CF", "Accum. PV CF"
+    ]
+    _cf_col_arrays = [
+        col_calendar, col_proj_year, col_op_year,
+        _fmt_cf_col(cf_revenue),      _fmt_cf_col(cf_var_labor),
+        _fmt_cf_col(cf_gross_profit), _fmt_cf_col(cf_fixed),
+        _fmt_cf_col(cf_ebitda),       _fmt_cf_col(cf_depreciation),
+        _fmt_cf_col(cf_ebit),         _fmt_cf_col(cf_fin_int_col),
+        _fmt_cf_col(cf_ebt),          _fmt_cf_col(cf_taxes),
+        _fmt_cf_col(cf_net_profit),   _fmt_cf_col(cf_amortization),
+        _fmt_cf_col(cf_proj_inv),     _fmt_cf_col(cf_cashflow),
+        _fmt_cf_col(cf_pv_cf),        _fmt_cf_col(cf_accum_pv),
+    ]
+
+    # Highlight key result columns
+    _accent_idxs = [
+        _cf_headers.index("EBITDA")       - 0,   # col index offset by 0 (headers include index cols)
+        _cf_headers.index("Net Profit")   - 0,
+        _cf_headers.index("Cash Flow")    - 0,
+        _cf_headers.index("Accum. PV CF") - 0,
+    ]
+
+    st.markdown(
+        _html_cf_table(
+            _cf_headers, _cf_col_arrays, epc_years,
+            total_col_idx=_cf_headers.index("Cash Flow"),
+            accent_col_idxs=_accent_idxs
+        ),
+        unsafe_allow_html=True,
+    )
+
+    st.space("small")
+    st.caption("Key column totals (operational years only)")
+    _op_slice = slice(epc_years, total_years)
+    _footer_totals(
+        ["Revenue", "Var.+Labor", "Fixed", "EBITDA", "Net Profit", "Cash Flow", "NPV"],
+        [
+            sum(v for v in cf_revenue[_op_slice]     if v is not None),
+            sum(v for v in cf_var_labor[_op_slice]   if v is not None),
+            sum(v for v in cf_fixed[_op_slice]       if v is not None),
+            sum(v for v in cf_ebitda[_op_slice]      if v is not None),
+            sum(v for v in cf_net_profit[_op_slice]  if v is not None),
+            sum(v for v in cf_cashflow[_op_slice]    if v is not None),
+            npv_val,
+        ]
+    )
+
+st.space("medium")
+
+
