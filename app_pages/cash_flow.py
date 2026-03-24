@@ -1240,7 +1240,21 @@ _cap_fracs  = _fa_capex_fracs
 _prod_unit   = d.get("Unit", "")
 _wif_cap     = _wv("Capacity",               safe_val(d, "Capacity"))
 _wif_wh      = _wv("Working Hours per Year", safe_val(d, "Working Hours per Year", 8000.0))
-_main_price  = safe_val(d, "Main Product Price", 0.0)
+
+# ── Effective product price — shared with dashboard ───────────────────────────
+# Read from price mode state if available, fall back to saved scenario value.
+# This ensures the revenue table and NPV graph always use the same price.
+_input_price_raw = safe_val(d, "Main Product Price", 0.0)
+_pm_state = (st.session_state
+             .get("cf_price_mode", {})
+             .get(scenario_name, {}))
+_pm_mode  = _pm_state.get("mode", "MANUAL")
+if _pm_mode != "MANUAL" and _pm_state.get("solved_price"):
+    _main_price = float(_pm_state["solved_price"])
+elif _pm_state.get("manual_price") is not None:
+    _main_price = float(_pm_state["manual_price"])
+else:
+    _main_price = _input_price_raw
 
 _bp_base = 0.0
 for _r in (d.get("Credits and Byproducts", []) or []):
@@ -1986,26 +2000,45 @@ with _ctrl_cols[0]:
     st.markdown('<p style="font-size:.85rem;color:#8b949e;margin:.3rem 0 .1rem 0">'
                 'Main product selling price</p>', unsafe_allow_html=True)
 
-    # Always show an editable number_input — this IS the price control
-    _price_input_val = float(_eff_price) if _eff_price else 0.0
-    _new_manual = st.number_input(
-        "Product price", value=_price_input_val,
-        min_value=0.0, step=1.0, format="%.2f",
-        key=f"dash_price_{scenario_name}",
-        label_visibility="collapsed",
-        help=f"USD / {_price_unit}"
-    )
-    # If user typed a different value, switch to MANUAL mode
-    if abs(_new_manual - _price_input_val) > 0.005:
+    # Widget key for the price input
+    _price_wk = f"dash_price_{scenario_name}"
+
+    # Seed the widget from solved/manual price state.
+    # We only update session_state[widget_key] when the solver produces a new value
+    # — this avoids the widget reading its own stale cached value and overwriting the solve.
+    _widget_target = _eff_price if _eff_price > 0 else 0.0
+    _widget_current = st.session_state.get(_price_wk, None)
+
+    # If mode changed to a solver result, force the widget to show the new price
+    if _pm["mode"] != "MANUAL" and _pm.get("solved_price"):
+        _force_price = float(_pm["solved_price"])
+        if _widget_current is None or abs(_widget_current - _force_price) > 0.005:
+            st.session_state[_price_wk] = _force_price
+
+    def _on_price_change():
+        """Called when user manually edits the price widget."""
+        new_p = st.session_state.get(_price_wk, 0.0)
         _pm["mode"]         = "MANUAL"
-        _pm["manual_price"] = _new_manual
         _pm["solved_price"] = None
-        _eff_price          = _new_manual
+        _pm["manual_price"] = float(new_p)
+
+    _new_manual = st.number_input(
+        "Product price",
+        value=_widget_target,
+        min_value=0.0, step=1.0, format="%.2f",
+        key=_price_wk,
+        label_visibility="collapsed",
+        help=f"USD / {_price_unit}",
+        on_change=_on_price_change,
+    )
+
+    # Update _eff_price from widget (handles MANUAL edits without rerun conflict)
+    if _pm["mode"] == "MANUAL":
+        _eff_price = float(st.session_state.get(_price_wk, _input_price))
 
     st.markdown(f'<p style="font-size:.75rem;color:#6e7681;margin:.1rem 0 0 0">'
                 f'USD / {_price_unit}</p>', unsafe_allow_html=True)
 
-    # Mode badge
     _mode_colors = {"USE_MSP": "green", "SET_NPV": "blue", "SET_IRR": "orange", "MANUAL": "gray"}
     _mode_labels = {"USE_MSP": "MSP", "SET_NPV": "Set NPV", "SET_IRR": "Set IRR", "MANUAL": "Manual"}
     st.badge(_mode_labels.get(_pm["mode"], "Manual"),
@@ -2027,6 +2060,7 @@ with _ctrl_cols[1]:
             _pm["solved_price"] = _msp_val
             _pm["manual_price"] = None
             _eff_price          = _msp_val
+            st.session_state[f"dash_price_{scenario_name}"] = _msp_val
             st.rerun()
         else:
             st.error("Could not solve MSP — check inputs.")
@@ -2051,6 +2085,8 @@ with _ctrl_cols[2]:
             _pm["solved_price"] = _p_npv
             _pm["manual_price"] = None
             _eff_price          = _p_npv
+            # Force widget to show new price on next render
+            st.session_state[f"dash_price_{scenario_name}"] = _p_npv
             st.rerun()
         else:
             st.error("Could not solve — target NPV may be unreachable.")
@@ -2077,6 +2113,8 @@ with _ctrl_cols[3]:
             _pm["solved_price"] = _p_irr
             _pm["manual_price"] = None
             _eff_price          = _p_irr
+            # Force widget to show new price on next render
+            st.session_state[f"dash_price_{scenario_name}"] = _p_irr
             st.rerun()
         else:
             st.error("Could not solve — target IRR may be unreachable.")
