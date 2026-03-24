@@ -1810,10 +1810,22 @@ st.markdown("---")
 st.markdown("### Financial Dashboard")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CORE CF ENGINE — Recomputes full CF based on Price and TIC
+# CORE MATH HELPERS (Fixed: Added _irr_from_cfs back)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _irr_from_cfs(cfs):
+    """Calculate Internal Rate of Return safely."""
+    if not _HAS_NPF:
+        return None
+    try:
+        # We need at least one positive and one negative value for IRR to work
+        v = npf.irr(cfs)
+        return None if (v is None or np.isnan(v) or np.isinf(v)) else float(v)
+    except Exception:
+        return None
+
 def _build_cf_arrays(product_price, capex_mult=1.0):
+    """Recomputes full project cash flow arrays for a given price/TIC."""
     _c = _capex * capex_mult
     _lc_wc = _wc * capex_mult
     _lc_su = _startup * capex_mult
@@ -1826,12 +1838,14 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
         oi = i - _epc
         is_epc = i < _epc
 
+        # Investment & Land
         inv = -_c * _fracs[i] if is_epc else 0.0
         if i == _epc - 1: inv += -_lc_wc
         if oi == _op - 1: inv += +_lc_wc
         if oi == 0: inv += -_lc_su
         if i == 0: inv += -(_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0)
 
+        # Financing
         f_int = 0.0; f_amort = 0.0
         if _fa_leveraged:
             _tot_d = _c * _fa_debt_ratio
@@ -1840,6 +1854,7 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
             if oi >= _fa_grace_yrs and (oi - _fa_grace_yrs) < _fa_amort_yrs:
                 f_amort = -_ann_r
 
+        # EPC years (Negative cash flow, no revenue)
         if is_epc:
             cf = inv + f_int + f_amort
             pv = cf / (1 + _fa_marr) ** i
@@ -1847,6 +1862,7 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
             cfs.append(cf); pv_list.append(pv); accum_list.append(accum_pv)
             continue
 
+        # Operational years (Revenue - Expenses)
         cp = _cpct(oi); fp = _fpct(oi)
         rev = (product_price * _wif_cap * cp * (1 + _fa_g_main)**oi) + (_bp_base * cp * (1 + _fa_g_byprod)**oi)
         if oi == _op - 1: rev += (_c * _fa_resid_pct)
@@ -1859,7 +1875,10 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
         dep = (_dep_sl_v if oi < _fa_dep_yrs else 0.0)
         ebt = rev + costs + dep + f_int
         tax = -max(0.0, ebt) * _fa_tax
-        cf = (ebt + tax) - dep + f_amort + inv # Simplified logic for vibe-check
+        
+        # Standard CF = Net Profit + Depreciation + Amortization + Investment
+        # (Since 'dep' is negative here, we subtract it to 'add it back')
+        cf = (ebt + tax) - dep + f_amort + inv
         
         pv = cf / (1 + _fa_marr) ** i
         accum_pv += pv
@@ -1874,7 +1893,8 @@ def _npv_at_price(price, capex_mult=1.0):
 def _solve_price_for_npv(target_npv, capex_mult=1.0):
     if not _HAS_SCIPY: return None
     try:
-        return brentq(lambda p: _npv_at_price(p, capex_mult) - target_npv, 0.01, 1e9, xtol=0.01)
+        # Search for a price between 0.01 and 1 million USD/unit
+        return brentq(lambda p: _npv_at_price(p, capex_mult) - target_npv, 0.01, 1e6, xtol=0.01)
     except: return None
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1882,7 +1902,7 @@ def _solve_price_for_npv(target_npv, capex_mult=1.0):
 # ─────────────────────────────────────────────────────────────────────────────
 price_key = f"price_input_{scenario_name}"
 
-# Issue 1 Fix: Auto-calculate MSP if no price is provided in Input Data
+# Auto-calculate MSP if no price is provided in Input Data
 if price_key not in st.session_state:
     input_price = safe_val(d, "Main Product Price", 0.0)
     if input_price <= 0:
@@ -1899,7 +1919,7 @@ st.markdown("#### Price & NPV Controls")
 c1, c2, c3, c4 = st.columns([2, 2, 2, 2])
 
 with c1:
-    # Issue 2 Fix: Editable price on this page
+    # Editable price on this page - now syncs with calculations
     eff_price = st.number_input(f"Selling Price ({d.get('Unit', 'unit')})", 
                                 min_value=0.0, step=1.0, key=price_key)
 
@@ -1919,7 +1939,6 @@ with c3:
             st.rerun()
 
 with c4:
-    # Reset button
     if st.button("Reset to Input Data", use_container_width=True):
         st.session_state[price_key] = safe_val(d, "Main Product Price", 0.0)
         st.rerun()
@@ -1935,7 +1954,7 @@ cfs_l, pvs_l, acpv_l = _build_cf_arrays(eff_price, _tic_lo)
 cfs_h, pvs_h, acpv_h = _build_cf_arrays(eff_price, _tic_hi)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ENHANCED NPV GRAPH (Issue 3 Fix)
+# ENHANCED NPV GRAPH (Matching Reference Layout)
 # ─────────────────────────────────────────────────────────────────────────────
 section_header("Cumulative Discounted Cash Flow", "#58a6ff")
 cal_yrs = [int(d.get("Year of Analysis", 2024)) + i for i in range(_total)]
@@ -1963,7 +1982,6 @@ fig.add_trace(go.Scatter(x=[cal_yrs[peak_idx]], y=[acpv_b[peak_idx]/1e6], mode='
                          text=["Peak Investment"], textposition="bottom center",
                          marker=dict(color='#f85149', size=8)))
 
-# Layout cleanup
 fig.update_layout(template="plotly_dark", height=450, margin=dict(l=20, r=20, t=20, b=20),
                   yaxis_title="MMUSD", hovermode="x unified")
 fig.add_hline(y=0, line_color="white", line_width=1, opacity=0.3)
