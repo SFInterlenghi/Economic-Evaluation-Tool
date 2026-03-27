@@ -196,52 +196,59 @@ def _load_hardcoded_scenario(name: str):
 # ══════════════════════════════════════════════════════════════════════════════
 
 _SECTIONS = [
-    "process_variables",
-    "dma",
-    "aspen_pea",
-    "capex_equipment",
-    "capex_installation",
-    "capex_indirect",
-    "capex_nonfield",
-    "capex_calculations",
-    "additional_info",
-    "variable_costs",
-    "fixed_costs",
-    "working_capital",
-    "startup_costs",
-    "financial_assumptions",
-    "project_lifetime",
+    "dma",               # 4 — unlocked by any source selected
+    "aspen_pea",         # 5 — unlocked by Aspen PEA source
+    "capex_equipment",   # 6 — unlocked by eq_cost_src set
+    "capex_installation",# 7 — unlocked by oth_cost_src set
+    "capex_indirect",    # 8 — unlocked by oth_cost_src set
+    "capex_nonfield",    # 9 — unlocked by oth_cost_src set
+    "capex_calculations",# 10 — unlocked by any cost source set
+    "additional_info",   # 11 — unlocked by any cost source set
+    "variable_costs",    # 12 — unlocked by basic info complete
+    "fixed_costs",       # 13 — unlocked by CAPEX section visible
+    "working_capital",   # 14 — unlocked by fixed costs visible
+    "startup_costs",     # 15 — unlocked by working capital visible
+    "financial_assumptions", # 16 — unlocked by basic info complete
+    "project_lifetime",  # 17 — unlocked by financial assumptions visible
+    "process_variables", # 18 — unlocked by scenario name filled
 ]
 
 if "section_visible" not in st.session_state:
+    # ALL sections start hidden — progressively unlocked by user actions
     st.session_state.section_visible = {s: False for s in _SECTIONS}
 
 
 def _gate(section: str) -> bool:
-    """Return True if section should be shown (gated OR manually toggled on)."""
+    """Return True if section is currently shown (auto-unlocked OR manually toggled)."""
     return st.session_state.section_visible.get(section, False)
 
 
 def _update_gates():
-    """Re-evaluate which sections are unlocked based on current inputs."""
+    """
+    Auto-unlock sections based on current input state.
+    Rule: only ever set True (unlock) — never force-close a section the user opened.
+    Unlocking is one-way; toggling is controlled exclusively by _section_toggle().
+    """
     sv = st.session_state.section_visible
-    sn = st.session_state.get("sn_input", "").strip()
-    mp = st.session_state.get("mp_input", "").strip()
-    pc = st.session_state.get("pc_input", None)
+    sn     = st.session_state.get("sn_input", "").strip()
+    mp     = st.session_state.get("mp_input", "").strip()
+    pc     = st.session_state.get("pc_input", None)
     eq_src = st.session_state.get("eq_cost_src", "")
-    oth_src = st.session_state.get("oth_cost_src", "")
+    oth_src= st.session_state.get("oth_cost_src", "")
 
-    basic_ok = bool(mp and pc)
-    eq_set   = bool(eq_src)
-    oth_set  = bool(oth_src)
-    any_pea  = "Aspen PEA" in (eq_src, oth_src)
+    basic_ok  = bool(mp and pc)
+    eq_set    = bool(eq_src)
+    oth_set   = bool(oth_src)
+    any_src   = eq_set or oth_set
+    any_pea   = "Aspen PEA" in (eq_src, oth_src)
+    capex_vis = sv.get("capex_calculations", False)
+    fc_vis    = sv.get("fixed_costs", False)
+    wc_vis    = sv.get("working_capital", False)
+    fin_vis   = sv.get("financial_assumptions", False)
 
-    # Auto-unlock — only set True, never forcibly collapse what user opened
-    if sn:
-        sv["process_variables"] = True
-    if basic_ok:
+    # Sequential unlock — only set True, never override user manual toggle to False
+    if any_src:
         sv["dma"] = True
-        sv["variable_costs"] = True
     if any_pea:
         sv["aspen_pea"] = True
     if eq_set:
@@ -250,28 +257,37 @@ def _update_gates():
         sv["capex_installation"] = True
         sv["capex_indirect"] = True
         sv["capex_nonfield"] = True
-    if eq_set and oth_set:
+    if any_src:
         sv["capex_calculations"] = True
         sv["additional_info"] = True
-    if eq_set or oth_set:
-        sv["capex_calculations"] = True
-        sv["additional_info"] = True
-    if basic_ok and eq_set:
-        sv["fixed_costs"] = True
-        sv["working_capital"] = True
-        sv["startup_costs"] = True
+    if basic_ok:
+        sv["variable_costs"] = True
         sv["financial_assumptions"] = True
+    # Fixed costs unlocked once CAPEX calculations section is visible
+    if sv.get("capex_calculations", False) and basic_ok:
+        sv["fixed_costs"] = True
+    # Working capital unlocked once fixed costs visible
+    if sv.get("fixed_costs", False):
+        sv["working_capital"] = True
+    # Startup unlocked once working capital visible
+    if sv.get("working_capital", False):
+        sv["startup_costs"] = True
+    # Project lifetime unlocked once financial assumptions visible
+    if sv.get("financial_assumptions", False):
         sv["project_lifetime"] = True
+    # Process variables: unlocked when scenario name is filled
+    if sn:
+        sv["process_variables"] = True
 
 
-def _section_toggle(section: str, label: str, always_show: bool = False):
+def _section_toggle(section: str, label: str) -> bool:
     """
-    Render a toggle button for a section.
-    Returns True if the section should be rendered.
+    Render a section header with a Show/Hide toggle button.
+    Always available — user can open/close any section at any time.
+    Returns True if the section content should be rendered.
     """
     sv = st.session_state.section_visible
     current = sv.get(section, False)
-
     col1, col2 = st.columns([8, 1])
     with col1:
         st.markdown(f"#### {label}")
@@ -280,7 +296,6 @@ def _section_toggle(section: str, label: str, always_show: bool = False):
         if st.button(btn_label, key=f"toggle_{section}", use_container_width=True):
             sv[section] = not current
             st.rerun()
-
     return sv.get(section, False)
 
 
@@ -840,7 +855,7 @@ st.space("medium")
 # SECTION 4 — Process Variables  (gated: scenario name filled)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("process_variables", "4. Process Variables"):
+if _section_toggle("process_variables", "18. Process Variables"):
     saved_vars = st.session_state.scenarios.get(scenario_name, {}).get("Process Variables", [])
     df_vars = pd.DataFrame(saved_vars) if saved_vars else pd.DataFrame(columns=["Variable Name", "Unit", "Value"])
     edited_process_vars = st.data_editor(
@@ -863,7 +878,7 @@ st.space("medium")
 # SECTION 5 — Decision Making Assistant  (gated: basic info complete)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("dma", "5. Decision Making Assistant"):
+if _section_toggle("dma", "4. Decision Making Assistant"):
     col_dm1, col_dm2, col_dm3 = st.columns(3)
     with col_dm1:
         st.selectbox("Type of main product",        PRODUCT_TYPES,    key="dm_prod_type", on_change=_on_dma_change)
@@ -883,8 +898,7 @@ st.space("medium")
 
 if _gate("aspen_pea") and (_eq_is_pea or _oth_is_pea):
     st.markdown("---")
-    _section_toggle("aspen_pea", "6. Aspen PEA File Import")
-    if _gate("aspen_pea"):
+    if _section_toggle("aspen_pea", "5. Aspen PEA File Import"):
         st.caption(
             "Upload the IPEWB (.xlsx) and/or Reports (.xlsm) files. "
             "Auto-detects Aspen PEA version. Imported values become editable defaults."
@@ -954,7 +968,7 @@ def _overridable_number(label, ref_val, override_key, step=0.01, min_value=None)
 is_lang = st.session_state.oth_cost_src == "Lang Factors"
 
 # ── 7.1 Equipment Costs ───────────────────────────────────────────────────────
-if _section_toggle("capex_equipment", "7.1 Equipment Costs"):
+if _section_toggle("capex_equipment", "6. Equipment Costs"):
     if is_lang:
         st.checkbox("Allow manual override of Lang factor fields?", key="allow_override",
                     on_change=_seed_override_values,
@@ -995,7 +1009,7 @@ else:
 st.markdown("---")
 
 # ── 7.2 Installation Costs ────────────────────────────────────────────────────
-if _section_toggle("capex_installation", "7.2 Installation Costs"):
+if _section_toggle("capex_installation", "7. Installation Costs"):
     inst_fields = ["Piping", "Civil", "Steel", "Instrumentals", "Electrical", "Insulation"]
     inst_cols   = st.columns(3)
     inst_values = []
@@ -1034,7 +1048,7 @@ else:
 st.markdown("---")
 
 # ── 7.3 Indirect Field Costs ──────────────────────────────────────────────────
-if _section_toggle("capex_indirect", "7.3 Indirect Field Costs"):
+if _section_toggle("capex_indirect", "8. Indirect Field Costs"):
     col1, col2, col3 = st.columns(3)
     with col1:
         field_office = lang_or_manual("Field Office Staff", "Field Office Staff", equip_acq)
@@ -1052,7 +1066,7 @@ else:
 st.markdown("---")
 
 # ── 7.4 Non-Field Costs ───────────────────────────────────────────────────────
-if _section_toggle("capex_nonfield", "7.4 Non-Field Costs"):
+if _section_toggle("capex_nonfield", "9. Non-Field Costs"):
     nf_fields = ["Freight", "Taxes and Permits", "Engineering and HO", "GA Overheads", "Contract Fee"]
     nf_cols   = st.columns(3)
     nf_values = []
@@ -1071,7 +1085,7 @@ else:
 st.markdown("---")
 
 # ── 7.5 CAPEX Calculations ────────────────────────────────────────────────────
-if _section_toggle("capex_calculations", "7.5 CAPEX Calculations"):
+if _section_toggle("capex_calculations", "10. CAPEX Calculations"):
     project_costs_isbl_osbl = total_direct_field_costs + total_indirect_field_costs + total_non_field_costs
     st.metric("Project Costs for ISBL + OSBL", fmt_curr(project_costs_isbl_osbl))
     st.markdown("---")
@@ -1129,7 +1143,7 @@ st.space("medium")
 # SECTION 8 — Additional Information  (gated: any cost source set)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("additional_info", "8. Additional Information"):
+if _section_toggle("additional_info", "11. Additional Information"):
     col_ai1, col_ai2 = st.columns(2)
     with col_ai1:
         working_hours = st.number_input("Working Hours per Year (h/y)", min_value=1.0, max_value=8760.0, step=10.0, key="working_hours")
@@ -1226,7 +1240,7 @@ def _total_row(label, value, key):
         st.text_input(key, value=fmt_curr(value), disabled=True, label_visibility="collapsed")
 
 
-if _section_toggle("variable_costs", "9. Variable Costs"):
+if _section_toggle("variable_costs", "12. Variable Costs"):
     st.subheader("Raw Materials")
     rm_active, total_raw_material_cost = _cost_table_v2("Raw Materials", f"rm_editor_{st.session_state.table_key}", working_hours)
     _total_row("Total raw materials cost", total_raw_material_cost, "total_rm")
@@ -1255,7 +1269,7 @@ st.space("medium")
 # SECTION 10 — Fixed Costs  (gated: basic info + CAPEX)
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("fixed_costs", "10. Fixed Costs"):
+if _section_toggle("fixed_costs", "13. Fixed Costs"):
     st.subheader("Labor Costs")
 
     col1, col2, col3, col4 = st.columns(4)
@@ -1469,7 +1483,7 @@ st.space("medium")
 # SECTION 11 — Working Capital
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("working_capital", "11. Working Capital"):
+if _section_toggle("working_capital", "14. Working Capital"):
     wc_method = st.radio("Working capital method", options=["Percentage", "Operating Cycle"],
                          index=0 if st.session_state.wc_method == "Percentage" else 1,
                          horizontal=True, key="wc_method")
@@ -1524,7 +1538,7 @@ st.space("medium")
 # SECTION 12 — Startup Costs
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("startup_costs", "12. Startup Costs"):
+if _section_toggle("startup_costs", "15. Startup Costs"):
     startup_method = st.radio("Startup costs method", options=["Single Factor", "Multiple Factors"],
                               index=0 if st.session_state.startup_method == "Single Factor" else 1,
                               horizontal=True, key="startup_method")
@@ -1629,7 +1643,7 @@ st.space("medium")
 # SECTION 13 — Financial Assumptions
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("financial_assumptions", "13. Financial Assumptions"):
+if _section_toggle("financial_assumptions", "16. Financial Assumptions"):
     # Land
     st.subheader("Land")
     land_option = st.radio("Land option", options=["Buy", "Rent"],
@@ -1811,7 +1825,7 @@ st.space("medium")
 # SECTION 14 — Project Lifetime & CAPEX Distribution
 # ══════════════════════════════════════════════════════════════════════════════
 
-if _section_toggle("project_lifetime", "14. Project Lifetime & CAPEX Distribution"):
+if _section_toggle("project_lifetime", "17. Project Lifetime & CAPEX Distribution"):
     col1, col2, col3 = st.columns(3)
     with col1:
         epc_years = st.number_input("EPC time (years)", min_value=1, max_value=10, step=1, key="epc_years")
