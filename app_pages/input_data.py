@@ -1906,28 +1906,102 @@ else:
 st.space("medium")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SAVE BUTTON
+# SAVE — VALIDATION & WARNINGS
 # ══════════════════════════════════════════════════════════════════════════════
 
-if st.button("Save / Update Scenario", type="primary"):
-    if not st.session_state.sn_input:
-        st.error("Please provide a Scenario Name before saving.")
-    elif st.session_state.pc_input is None:
-        st.error("Please provide a Main Product Capacity before saving.")
-    else:
-        util_bool = st.session_state.lang_utility if st.session_state.oth_cost_src == "Lang Factors" else False
+def _run_validations() -> tuple[list[str], list[str]]:
+    """
+    Returns (critical_errors, soft_warnings).
+    critical_errors  → block save entirely, must be fixed first.
+    soft_warnings    → shown with proceed checkbox, save allowed after acknowledgement.
+    """
+    crits = []
+    warns = []
 
-        freight, taxes_permits, eng_ho, ga_overheads, contract_fee = (nf_values + [0.0]*5)[:5]
-        piping, civil, steel, instrumentals, electrical, insulation = (inst_values + [0.0]*6)[:6]
+    # ── Critical checks ──────────────────────────────────────────────────────
+    if not st.session_state.get("sn_input", "").strip():
+        crits.append("Scenario name is empty.")
+    if not st.session_state.get("mp_input", "").strip():
+        crits.append("Main product name is not defined.")
+    if not st.session_state.get("pc_input"):
+        crits.append("Main product capacity is zero or not set.")
+    if project_capex <= 0:
+        crits.append(f"Project CAPEX is {fmt_curr(project_capex)} — must be greater than zero for cash flow to be valid.")
+    if total_opex <= 0:
+        crits.append(f"Total OPEX is {fmt_curr(total_opex)} — must be greater than zero. Check that fixed and variable costs are entered.")
 
-        # Compute annual capacity for saving
-        _ann_cap_val, _ann_cap_unit = annual_capacity(
-            st.session_state.pc_input or 0.0,
-            st.session_state.pu_input,
-            working_hours,
-        )
+    # ── Soft warnings ─────────────────────────────────────────────────────────
+    if equip_acq <= 0:
+        warns.append("Equipment Acquisition is zero — is this intentional?")
 
-        st.session_state.scenarios[st.session_state.sn_input] = {
+    # Installation costs — check each individually
+    _inst_names = ["Piping", "Civil", "Steel", "Instrumentals", "Electrical", "Insulation", "Paint"]
+    _inst_vals  = list(inst_values) + [paint]
+    for _n, _v in zip(_inst_names, _inst_vals):
+        if _v <= 0:
+            warns.append(f"{_n} installation cost is zero — proceed without it?")
+
+    # Variable cost tables
+    _rm_rows  = rm_active if not rm_active.empty else pd.DataFrame()
+    _cu_rows  = cu_active if not cu_active.empty else pd.DataFrame()
+    _cb_rows  = cb_active if not cb_active.empty else pd.DataFrame()
+
+    if _rm_rows.empty or len(_rm_rows) == 0:
+        warns.append("No raw materials defined — is this a process with no material inputs?")
+    if _cu_rows.empty or len(_cu_rows) == 0:
+        warns.append("No chemical inputs or utilities defined — proceed without utilities?")
+    if _cb_rows.empty or len(_cb_rows) == 0:
+        warns.append("No byproducts or credits defined — proceed without any revenue credits?")
+
+    # Working hours
+    if st.session_state.get("working_hours", 0.0) <= 0:
+        warns.append("Working hours per year is zero or not set.")
+
+    return crits, warns
+
+
+# Compute validation state once (before rendering save UI)
+_crits, _warns = _run_validations()
+
+st.markdown("---")
+st.markdown("#### Save Scenario")
+
+# Show critical errors — always visible, block save
+if _crits:
+    for _msg in _crits:
+        st.error(f"🚫 **{_msg}**")
+
+# Show soft warnings with proceed checkbox
+_proceed = True  # default: no warnings to acknowledge
+if _warns:
+    st.warning("⚠️ **The following issues were detected. Review before saving:**")
+    for _msg in _warns:
+        st.markdown(f"- {_msg}")
+    _proceed = st.checkbox(
+        "I have reviewed the above warnings and wish to proceed with saving.",
+        key="save_proceed_checkbox",
+    )
+
+_save_blocked = bool(_crits) or not _proceed
+
+if st.button(
+    "Save / Update Scenario",
+    type="primary",
+    disabled=_save_blocked,
+):
+    util_bool = st.session_state.lang_utility if st.session_state.oth_cost_src == "Lang Factors" else False
+
+    freight, taxes_permits, eng_ho, ga_overheads, contract_fee = (nf_values + [0.0]*5)[:5]
+    piping, civil, steel, instrumentals, electrical, insulation = (inst_values + [0.0]*6)[:6]
+
+    # Compute annual capacity for saving
+    _ann_cap_val, _ann_cap_unit = annual_capacity(
+        st.session_state.pc_input or 0.0,
+        st.session_state.pu_input,
+        working_hours,
+    )
+
+    st.session_state.scenarios[st.session_state.sn_input] = {
             "Product Name":              st.session_state.mp_input,
             "Unit":                      st.session_state.pu_input,
             "Capacity":                  st.session_state.pc_input,
@@ -2113,9 +2187,9 @@ if st.button("Save / Update Scenario", type="primary"):
             "Main Product Price":        main_product_price,
         }
 
-        st.session_state.success_msg       = f"Scenario '{st.session_state.sn_input}' saved successfully!"
-        st.session_state.clear_on_next_run = True
-        st.rerun()
+    st.session_state.success_msg       = f"Scenario '{st.session_state.sn_input}' saved successfully!"
+    st.session_state.clear_on_next_run = True
+    st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPILED SCENARIOS TABLE
