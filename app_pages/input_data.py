@@ -81,15 +81,7 @@ _TIME_TO_PER_HOUR = {
     "s": 3600.0, "min": 60.0, "h": 1.0, "day": 1/24, "year": None,  # year handled specially
 }
 
-# Dimension → price unit
-_DIM_TO_PRICE_UNIT = {
-    "mass":   "$/kg",
-    "volume": "$/m3",
-    "energy": "$/kWh",
-    "molar":  "$/mol",
-    "power":  "$/kWh",
-}
-
+# Dimension of each quantity unit
 _QTY_TO_DIM = {
     "g":"mass","kg":"mass","t":"mass","lb":"mass","oz":"mass",
     "mL":"volume","L":"volume","m3":"volume","gal":"volume",
@@ -98,7 +90,32 @@ _QTY_TO_DIM = {
     "W":"power","kW":"power","MW":"power",
 }
 
-PRICE_UNITS_FULL = ["$/kg", "$/m3", "$/kWh", "$/mol"]
+# Valid price units per dimension
+_DIM_TO_PRICE_UNITS: dict[str, list[str]] = {
+    "mass":   ["$/g", "$/kg", "$/t", "$/lb", "$/oz"],
+    "volume": ["$/mL", "$/L", "$/m3", "$/gal"],
+    "energy": ["$/J", "$/kJ", "$/MJ", "$/kWh", "$/MWh", "$/BTU"],
+    "molar":  ["$/mol", "$/kmol"],
+    "power":  ["$/kWh"],
+}
+
+# Default price unit per dimension
+_DIM_TO_DEFAULT_PRICE_UNIT: dict[str, str] = {
+    "mass": "$/kg", "volume": "$/m3", "energy": "$/kWh",
+    "molar": "$/mol", "power": "$/kWh",
+}
+
+# Price unit qty label (for conversion factor lookup)
+_PRICE_UNIT_TO_QTY = {
+    "$/g": "g", "$/kg": "kg", "$/t": "t", "$/lb": "lb", "$/oz": "oz",
+    "$/mL": "mL", "$/L": "L", "$/m3": "m3", "$/gal": "gal",
+    "$/J": "J", "$/kJ": "kJ", "$/MJ": "MJ", "$/kWh": "kWh",
+    "$/MWh": "MWh", "$/BTU": "BTU",
+    "$/mol": "mol", "$/kmol": "kmol",
+}
+
+# Flat list of all price units
+PRICE_UNITS_FULL = [u for units in _DIM_TO_PRICE_UNITS.values() for u in units]
 
 
 def parse_rate_unit(rate_unit: str) -> tuple[str | None, str | None, str | None]:
@@ -119,9 +136,28 @@ def parse_rate_unit(rate_unit: str) -> tuple[str | None, str | None, str | None]
 
 
 def price_unit_for_rate(rate_unit: str) -> str:
-    """Return the correct price unit for a given rate unit."""
+    """Return the DEFAULT price unit for a given rate unit dimension."""
     _, _, dim = parse_rate_unit(rate_unit)
-    return _DIM_TO_PRICE_UNIT.get(dim, "$/kg")
+    return _DIM_TO_DEFAULT_PRICE_UNIT.get(dim, "$/kg")
+
+
+def valid_price_units_for_rate(rate_unit: str) -> list[str]:
+    """Return all valid price units for the dimension of a given rate unit."""
+    _, _, dim = parse_rate_unit(rate_unit)
+    return _DIM_TO_PRICE_UNITS.get(dim, ["$/kg"])
+
+
+def price_per_base_unit(price: float, price_unit: str) -> float:
+    """
+    Convert a user price (e.g. 5 $/lb) to price per base unit (e.g. $/kg).
+    Returns price_per_base = price / qty_to_base_factor_of_price_unit.
+    Example: 5 $/lb → 5 / 0.453592 = 11.02 $/kg
+    """
+    qty_label = _PRICE_UNIT_TO_QTY.get(price_unit)
+    if qty_label is None:
+        return price  # unknown unit, pass through
+    factor = _QTY_TO_BASE.get(qty_label, 1.0)
+    return price / factor if factor else price
 
 
 def annual_quantity(rate: float, rate_unit: str, working_hours: float) -> tuple[float, str]:
@@ -705,6 +741,8 @@ def _on_dma_change():
 
 with st.sidebar:
     st.markdown("### 🔧 Dev Tools")
+
+    # ── Load hardcoded scenarios ──────────────────────────────────────────
     if HARDCODED_SCENARIOS:
         st.markdown("**Load hardcoded scenario:**")
         for hname in HARDCODED_SCENARIOS:
@@ -712,10 +750,43 @@ with st.sidebar:
                 _load_hardcoded_scenario(hname)
                 st.rerun()
     else:
-        st.info("No hardcoded scenarios defined.\nAdd them to `HARDCODED_SCENARIOS` in `input_data.py`.")
+        st.caption("No hardcoded scenarios yet. Use the button below to export the current scenario.")
 
     st.markdown("---")
-    st.markdown("**Section visibility reset:**")
+
+    # ── Export current scenario as hardcoded ──────────────────────────────
+    st.markdown("**Export scenario as hardcoded:**")
+    _export_sn = st.session_state.get("sn_input", "").strip()
+    if _export_sn and _export_sn in st.session_state.scenarios:
+        _export_data = st.session_state.scenarios[_export_sn]
+
+        # JSON download
+        import json as _json
+        _json_bytes = _json.dumps({_export_sn: _export_data}, indent=4, default=str).encode()
+        st.download_button(
+            label=f"💾 Download '{_export_sn}' as JSON",
+            data=_json_bytes,
+            file_name=f"{_export_sn.replace(' ', '_')}_hardcoded.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+        # Python snippet
+        if st.button("📋 Show Python snippet", key="show_snippet", use_container_width=True):
+            st.session_state["show_hc_snippet"] = not st.session_state.get("show_hc_snippet", False)
+
+        if st.session_state.get("show_hc_snippet", False):
+            import pprint as _pprint
+            _snippet = f"HARDCODED_SCENARIOS[{_export_sn!r}] = " + _pprint.pformat(_export_data, width=80)
+            st.code(_snippet, language="python")
+            st.caption("Copy the above and paste into HARDCODED_SCENARIOS in input_data.py")
+    else:
+        st.caption("Save a scenario first, then export it here.")
+
+    st.markdown("---")
+
+    # ── Section visibility reset ──────────────────────────────────────────
+    st.markdown("**Section visibility:**")
     if st.button("Reset all sections to auto", use_container_width=True):
         st.session_state.section_visible = {s: False for s in _SECTIONS}
         _update_gates()
@@ -1161,16 +1232,19 @@ st.space("medium")
 
 def _cost_table_v2(section_key: str, editor_key: str, working_hours: float) -> tuple[pd.DataFrame, float]:
     """
-    Render variable cost table with full unit conversion.
-    Columns: Name | Rate | Rate Unit | Price | Price Unit | Annual Qty | Annual Cost
-    Price unit auto-set from Rate Unit dimension.
+    Variable cost table with full dimensional unit conversion.
+
+    Rate unit sets the dimension (mass/volume/energy/molar/power).
+    Price unit must be within the same dimension — user picks freely.
+    Cost = annual_qty_in_base × price_per_base_unit
+         = rate × qty_factor × time_factor × wh × (price / price_qty_factor)
+
     Returns (active_rows_df, total_annual_cost_usd).
     """
     existing = st.session_state.scenarios.get(st.session_state.sn_input, {}).get(section_key, [])
-    _blank = {"Name": None, "Rate": 0.0, "Rate Unit": RATE_UNITS_FULL[6],  # kg/h default
-              "Price": 0.0, "Price Unit": "$/kg"}
+    _blank = {"Name": None, "Rate": 0.0, "Rate Unit": "kg/h", "Price": 0.0, "Price Unit": "$/kg"}
+
     if existing:
-        # Ensure Price Unit column exists (backward compat)
         df = pd.DataFrame(existing)
         for col in ["Name","Rate","Rate Unit","Price","Price Unit"]:
             if col not in df.columns:
@@ -1179,6 +1253,9 @@ def _cost_table_v2(section_key: str, editor_key: str, working_hours: float) -> t
     else:
         df = pd.DataFrame([_blank])
 
+    # ── Render editor ────────────────────────────────────────────────────────
+    # Price Unit column uses PRICE_UNITS_FULL (all options) — per-row
+    # filtering is done post-edit with a warning if mismatch detected.
     edited = st.data_editor(
         df,
         key=editor_key,
@@ -1187,48 +1264,74 @@ def _cost_table_v2(section_key: str, editor_key: str, working_hours: float) -> t
         hide_index=True,
         column_config={
             "Name":       st.column_config.TextColumn("Name", width="medium"),
-            "Rate":       st.column_config.NumberColumn("Rate", min_value=0.0, step=0.000001, format="%.6f", width="small"),
-            "Rate Unit":  st.column_config.SelectboxColumn("Rate Unit", options=RATE_UNITS_FULL, width="small"),
-            "Price":      st.column_config.NumberColumn("Price ($/base unit)", min_value=0.0, step=0.000001, format="%.6f", width="small"),
-            "Price Unit": st.column_config.SelectboxColumn("Price Unit", options=PRICE_UNITS_FULL, width="small"),
+            "Rate":       st.column_config.NumberColumn(
+                               "Rate", min_value=0.0, step=0.000001, format="%.6f", width="small"),
+            "Rate Unit":  st.column_config.SelectboxColumn(
+                               "Rate Unit", options=RATE_UNITS_FULL, width="small"),
+            "Price":      st.column_config.NumberColumn(
+                               "Price", min_value=0.0, step=0.000001, format="%.6f", width="small"),
+            "Price Unit": st.column_config.SelectboxColumn(
+                               "Price Unit", options=PRICE_UNITS_FULL, width="small"),
         },
     )
 
     edited = edited.copy()
 
-    # Auto-derive Price Unit from Rate Unit (override what user may have typed)
-    edited["Price Unit"] = edited["Rate Unit"].apply(
-        lambda ru: price_unit_for_rate(ru) if pd.notna(ru) else "$/kg"
-    )
+    # ── Auto-correct Price Unit when Rate Unit dimension changes ─────────────
+    # If the stored Price Unit is not valid for the current Rate Unit dimension,
+    # reset it to the dimension default. If it is valid, leave it alone.
+    def _fix_price_unit(row):
+        ru = row["Rate Unit"] if pd.notna(row["Rate Unit"]) else "kg/h"
+        pu = row["Price Unit"] if pd.notna(row["Price Unit"]) else ""
+        valid = valid_price_units_for_rate(ru)
+        if pu in valid:
+            return pu   # user's choice is dimensionally consistent — keep it
+        return price_unit_for_rate(ru)  # reset to dimension default
+
+    edited["Price Unit"] = edited.apply(_fix_price_unit, axis=1)
 
     active = edited[edited["Name"].notna() & (edited["Name"].str.strip() != "")].copy()
 
-    # Compute annual quantity and cost per row
-    ann_qtys = []
+    # ── Compute annual cost per row ──────────────────────────────────────────
+    ann_qtys  = []
     ann_costs = []
-    ann_labels = []
+    dim_warns = []
+
     for _, row in active.iterrows():
-        rate = float(row["Rate"]) if pd.notna(row["Rate"]) else 0.0
+        rate  = float(row["Rate"])  if pd.notna(row["Rate"])  else 0.0
         price = float(row["Price"]) if pd.notna(row["Price"]) else 0.0
-        ru = row["Rate Unit"] if pd.notna(row["Rate Unit"]) else "kg/h"
+        ru    = row["Rate Unit"]  if pd.notna(row["Rate Unit"])  else "kg/h"
+        pu    = row["Price Unit"] if pd.notna(row["Price Unit"]) else price_unit_for_rate(ru)
+
+        # Annual quantity in base unit (kg, m3, kWh, mol)
         ann_qty, ann_label = annual_quantity(rate, ru, working_hours)
-        ann_cost = ann_qty * price
-        ann_qtys.append(f"{ann_qty:,.2f} {ann_label}")
+
+        # Price converted to $/base_unit
+        price_base = price_per_base_unit(price, pu)
+
+        ann_cost = ann_qty * price_base
+        ann_qtys.append(f"{ann_qty:,.4f} {ann_label}")
         ann_costs.append(ann_cost)
-        ann_labels.append(ann_label)
+
+        # Dimensional consistency check (should never fire after _fix_price_unit)
+        valid = valid_price_units_for_rate(ru)
+        if pu not in valid:
+            dim_warns.append(f"{row['Name']}: {ru} rate with {pu} price — incompatible dimensions.")
+
+    if dim_warns:
+        for w in dim_warns:
+            st.warning(f"⚠️ Unit mismatch: {w}")
 
     active["Annual Quantity"] = ann_qtys
-    active["Annual Cost (USD/year)"] = ann_costs
-    active["_ann_cost"] = ann_costs  # numeric for summing
+    active["_ann_cost"]       = ann_costs
 
-    # Display with derived columns
+    # ── Display results ──────────────────────────────────────────────────────
     display_df = active[["Name","Rate","Rate Unit","Price","Price Unit","Annual Quantity"]].copy()
     display_df["Cost (USD/year)"] = [f"${c:,.2f}" for c in ann_costs]
     if not display_df.empty:
         st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    total = sum(ann_costs)
-    return active, total
+    return active, sum(ann_costs)
 
 
 def _total_row(label, value, key):
