@@ -3,6 +3,26 @@ ISI-Tool — Chemical Plant Economic Evaluation
 Main entry point with navigation.
 """
 import streamlit as st
+import json
+import os
+
+# --- INITIALIZE HARDCODED VALIDATION CASES ---
+if "scenarios" not in st.session_state:
+    st.session_state.scenarios = {}
+
+# List of your validation files
+validation_files = ["ATJ_hardcoded.json", "Cado_hardcoded.json"]
+
+for file_name in validation_files:
+    if os.path.exists(file_name):
+        try:
+            with open(file_name, "r") as f:
+                data = json.load(f)
+                # These files contain a dictionary like {"ATJ": {...}}
+                # We merge them into our main scenarios dictionary
+                st.session_state.scenarios.update(data)
+        except Exception as e:
+            st.error(f"Error loading {file_name}: {e}")
 
 st.set_page_config(
     page_title="ISI-Tool",
