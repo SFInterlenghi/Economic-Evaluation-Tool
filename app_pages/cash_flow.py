@@ -342,8 +342,9 @@ c1, c2, c3, c4 = st.columns(4)
 with c1: kpi_card("Raw Materials", smart_fmt(rm_total), "#58a6ff")
 with c2: kpi_card("Chemical Inputs & Utilities", smart_fmt(cu_total), "#79c0ff")
 with c3: kpi_card("Credits & Byproducts", smart_fmt(cb_total), "#3fb950")
-tvc_net = rm_total + cu_total - cb_total
-with c4: kpi_card("Net Variable Costs", smart_fmt(tvc_net), "#e6a817")
+tvc_net = rm_total + cu_total - cb_total  # net for display only
+with c4: kpi_card("Net Variable Costs (display)", smart_fmt(tvc_net), "#e6a817",
+                  "Note", "Credits shown as revenue in CF")
 
 st.space("large")
 
@@ -612,9 +613,8 @@ st.space("medium")
 # 2G. OPEX SOLVE
 section_header("OPEX summary", "#e6a817")
 
-wif_tvc_for_opex = tvc_net
-base_tvc_saved   = (_base("Total Raw Material Cost") + _base("Total Chemical Inputs Utilities")
-                    - _base("Total Revenue"))
+wif_tvc_for_opex = rm_total + cu_total   # gross TVC — credits are revenue, not cost deductions
+base_tvc_saved   = (_base("Total Raw Material Cost") + _base("Total Chemical Inputs Utilities"))
 
 _olc_coeff_w   = wif_admin_ov + wif_admin_costs
 _capex_coeff_w = wif_mfg_ov + wif_taxes_ins + wif_mfg_costs
@@ -637,7 +637,7 @@ base_direct_fixed = _base("Direct Fixed Costs")
 base_total_fixed  = _base("Total Fixed Costs")
 base_opex         = _base("Total OPEX")
 
-_result_row("Net variable costs", base_tvc_saved, wif_tvc_for_opex)
+_result_row("Gross variable costs (RM + CU)", base_tvc_saved, wif_tvc_for_opex)
 _result_row("Total labor costs", base_labor, wif_labor)
 _result_row("Supply & maintenance", base_supply_maint, wif_supply_maint)
 _result_row("AFC (Additional Fixed Costs)", base_afc, wif_afc)
