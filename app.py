@@ -11,7 +11,7 @@ if "scenarios" not in st.session_state:
     st.session_state.scenarios = {}
 
 # List of your validation files
-validation_files = ["ATJ_hardcoded.json", "Cado_hardcoded.json"]
+validation_files = ["ATJ_hardcoded.json", "CADO_hardcoded.json"]
 
 for file_name in validation_files:
     if os.path.exists(file_name):
