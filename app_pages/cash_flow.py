@@ -15,7 +15,42 @@ from utils.constants import (
 from utils.ui import inject_css, page_header, section_header, kpi_card
 
 inject_css()
-
+ 
+    # ── Unit conversion helpers (met-C-Bar system, mirrors input_data.py) ─────
+    _CF_QTY_TO_BASE = {
+        "g": 1e-3, "kg": 1.0, "t": 1e3, "lb": 0.453592, "oz": 0.0283495,
+        "mL": 1e-6, "L": 1e-3, "m3": 1.0, "gal": 0.00378541,
+        "J": 1/3_600_000, "kJ": 1/3_600, "MJ": 1/3.6,
+        "kWh": 1.0, "MWh": 1_000.0, "BTU": 1/3412.14,
+        "mol": 1.0, "kmol": 1_000.0,
+        "W": 1e-3, "kW": 1.0, "MW": 1_000.0,
+    }
+    _CF_TIME_TO_PER_HOUR = {"s": 3600.0, "min": 60.0, "h": 1.0, "day": 1/24}
+    _CF_PRICE_UNIT_TO_QTY = {
+        "$/g":"g","$/kg":"kg","$/t":"t","$/lb":"lb","$/oz":"oz",
+        "$/mL":"mL","$/L":"L","$/m3":"m3","$/gal":"gal",
+        "$/J":"J","$/kJ":"kJ","$/MJ":"MJ","$/kWh":"kWh","$/MWh":"MWh","$/BTU":"BTU",
+        "$/mol":"mol","$/kmol":"kmol",
+    }
+ 
+    def _cf_annual_qty(rate, rate_unit, working_hours):
+        if not rate_unit: return rate * working_hours
+        if rate_unit in ("W","kW","MW"):
+            return rate * _CF_QTY_TO_BASE[rate_unit] * working_hours
+        if "/" not in rate_unit: return rate * working_hours
+        qty, time = rate_unit.split("/", 1)
+        qty_f = _CF_QTY_TO_BASE.get(qty, 1.0)
+        if time == "year": return rate * qty_f
+        return rate * qty_f * _CF_TIME_TO_PER_HOUR.get(time, 1.0) * working_hours
+ 
+    def _cf_price_per_base(price, price_unit):
+        qty_label = _CF_PRICE_UNIT_TO_QTY.get(price_unit)
+        if qty_label is None: return price
+        factor = _CF_QTY_TO_BASE.get(qty_label, 1.0)
+        return price / factor if factor else price
+ 
+    def _cf_line_cost(rate, rate_unit, price, price_unit, working_hours):
+        return _cf_annual_qty(rate, rate_unit, working_hours) * _cf_price_per_base(price, price_unit)
 # ── Guard ─────────────────────────────────────────────────────────────────────
 if "scenarios" not in st.session_state or not st.session_state.scenarios:
     page_header("Cash Flow & Analysis")
@@ -163,7 +198,7 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
         sess_def = sd.get(name, input_def)
         modified = abs(curr_price - input_def) > 1e-9
         spec_cost = curr_price * coeff
-        line_cost = curr_price * rate * (1.0 if is_per_year(rate_unit) else working_hours)
+        line_cost = _cf_line_cost(rate, rate_unit, curr_price, p_unit, working_hours)
         total_cost += line_cost
         rows.append({
             "name": name, "rate": rate, "rate_unit": rate_unit,
@@ -233,7 +268,7 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
         reset_key = f"rst_{scenario_name}_{table_key}_{name}"
         label_color = "#e6a817" if modified else "#8b949e"
 
-        col_lbl, col_inp, col_btn = st.columns([2, 1, 1])
+    col_lbl, col_inp, col_unit, col_btn = st.columns([2, 1, 0.6, 1])
         with col_lbl:
             hint = f"  ← default: {inp_def:.6g}" if modified else ""
             st.markdown(
@@ -247,6 +282,11 @@ def _build_vc_table(table_key: str, is_credit: bool = False):
             if abs(new_val - row["price"]) > 1e-12:
                 wk[table_key][name] = new_val
                 changed = True
+        with col_unit:
+            st.markdown(
+                f'<p style="font-size:.78rem;color:#8b949e;margin:0;padding:.45rem 0">'
+                f'{row["price_unit"]}</p>',
+                unsafe_allow_html=True)
         with col_btn:
             if st.button(f"↩ {inp_def:.6g}", key=reset_key,
                          help=f"Restore to default: {inp_def:.6g}", disabled=not modified):
@@ -1256,11 +1296,14 @@ elif _pm_state.get("manual_price") is not None:
 else:
     _main_price = _input_price_raw
 
-_bp_base = 0.0
-for _r in (d.get("Credits and Byproducts", []) or []):
-    if not _r.get("Name"): continue
-    _rate = float(_r.get("Rate", 0.0)); _price = float(_r.get("Price", 0.0))
-    _bp_base += _price * _rate * (1.0 if is_per_year(_r.get("Rate Unit","")) else _wif_wh)
+    _bp_base = 0.0
+    for _r in (d.get("Credits and Byproducts", []) or []):
+        if not _r.get("Name"): continue
+        _rate       = float(_r.get("Rate", 0.0))
+        _price      = float(_r.get("Price", 0.0))
+        _rate_unit  = _r.get("Rate Unit", "")
+        _price_unit = _r.get("Price Unit", "")
+        _bp_base   += _cf_line_cost(_rate, _rate_unit, _price, _price_unit, _wif_wh)
 
 _cap_first = _fa_cap_first
 _cap_inter = _fa_cap_inter
@@ -1769,8 +1812,15 @@ with st.expander("**Financing**", expanded=False, icon=":material/credit_card:")
 with st.expander("**Cash Flow**", expanded=True, icon=":material/account_balance_wallet:"):
     npv_color = "#3fb950" if _npv >= 0 else "#f85149"
     c1,c2,c3,c4 = st.columns(4)
-    with c1: kpi_card("NPV", smart_fmt(_npv), npv_color,
-                      "MARR", f"{_marr*100:.2f}%")
+    with c1:
+        _ann_cap_val  = d.get("Annual Capacity", capacity)
+        _ann_cap_unit = d.get("Annual Capacity Unit", "")
+        if _ann_cap_unit:
+            _cap_label = f"{_ann_cap_val:,.0f} {_ann_cap_unit}"
+        else:
+            _raw_unit  = prod_unit.replace("/year", "").strip("/").strip()
+            _cap_label = f"{capacity:,.0f} {_raw_unit}/year"
+        kpi_card("Main Product", prod_name, "#e6a817", "Capacity", _cap_label)
     with c2: kpi_card("Depreciation", _dep_method, "#8b949e",
                       "Period", f"{_dep_yrs} yrs")
     with c3: kpi_card("Tax Rate", f"{_tax*100:.1f}%", "#8b949e",
