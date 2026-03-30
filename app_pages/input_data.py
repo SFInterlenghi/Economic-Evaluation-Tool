@@ -1629,7 +1629,9 @@ if _section_toggle("working_capital", "14. Working Capital"):
 
         _r, _n = 0.15, 10
         simple_roi = (_r * project_capex) / (1.0 - (1.0 + _r) ** (-_n)) if project_capex > 0 else 0.0
-        direct_var_costs_wc = total_raw_material_cost + total_chemical_utilities - total_revenue
+        # Raw material inventory uses gross variable costs (RM + CU).
+        # Credits are revenue, not a cost reduction for inventory purposes.
+        direct_var_costs_wc = total_raw_material_cost + total_chemical_utilities
         current_assets = ((equiv_cash_days * opex + direct_var_costs_wc * raw_mat_days
                            + acc_rec_days * (opex + simple_roi)) * (24.0 / working_hours))
         st.markdown("---")
