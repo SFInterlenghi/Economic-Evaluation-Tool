@@ -1538,7 +1538,9 @@ if _section_toggle("fixed_costs", "13. Fixed Costs"):
     r_d_pct = r_d_pct_input / 100.0
 
     # Analytical OPEX solve
-    direct_var_costs = total_raw_material_cost + total_chemical_utilities - total_revenue
+    # OPEX solve uses gross variable costs (RM + CU only).
+    # Credits/byproducts appear on the revenue side of the cash flow, not as cost deductions.
+    direct_var_costs = total_raw_material_cost + total_chemical_utilities
     _olc_coeff   = admin_ov_pct + admin_costs_pct
     _capex_coeff = mfg_ov_pct + taxes_ins_pct + mfg_costs_pct
     _numerator   = (direct_var_costs + total_labor_costs + supply_maint_costs
