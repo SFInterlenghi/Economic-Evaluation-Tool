@@ -1483,7 +1483,7 @@ if _section_toggle("fixed_costs", "13. Fixed Costs"):
     with col2:
         op_sup_pct_input = _overridable_number(f"Operating supplies (% of Maintenance)  [ref: {op_sup_ref_pct:.2f}%]", op_sup_ref_pct, "op_supplies_override", step=0.1)
     op_sup_pct = op_sup_pct_input / 100.0
-    supply_maint_costs = (maint_pct + maint_pct * op_sup_pct) * project_capex
+    supply_maint_costs = (maint_pct + op_sup_pct) * project_capex
     with col3:
         st.text_input("Supply and maintenance costs (USD/year)", value=fmt_curr(supply_maint_costs), disabled=True)
 
