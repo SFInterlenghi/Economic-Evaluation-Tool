@@ -96,7 +96,7 @@ _DIM_TO_PRICE_UNITS: dict[str, list[str]] = {
     "volume": ["$/mL", "$/L", "$/m3", "$/gal"],
     "energy": ["$/J", "$/kJ", "$/MJ", "$/kWh", "$/MWh", "$/BTU"],
     "molar":  ["$/mol", "$/kmol"],
-    "power":  ["$/kWh"],
+    "power":  ["$/kWh", "$/MWh", "$/J", "$/kJ", "$/MJ", "$/BTU"],  # power priced as energy delivered
 }
 
 # Default price unit per dimension
@@ -197,11 +197,27 @@ def annual_quantity(rate: float, rate_unit: str, working_hours: float) -> tuple[
 
 def annual_capacity(rate: float, cap_unit: str, working_hours: float) -> tuple[float, str]:
     """
-    Same logic as annual_quantity but for main product capacity units.
-    cap_unit format: "qty/time"  e.g. "kg/h", "t/year"
-    Returns (annual_qty_in_base_unit, base_unit_label).
+    Convert main product capacity rate to annual quantity in base unit.
+    cap_unit format: "qty/time"  e.g. "kg/h", "t/year", "kg/year"
+
+    Returns (annual_value_in_base_unit, clean_annual_label).
+    The label is always "<base_unit>/year" with no double /year.
     """
-    return annual_quantity(rate, cap_unit, working_hours)
+    qty, time, dim = parse_rate_unit(cap_unit)
+    if qty is None:
+        return 0.0, "?/year"
+
+    qty_factor = _QTY_TO_BASE.get(qty, 1.0)
+    base_labels = {
+        "mass": "kg/year", "volume": "m3/year",
+        "energy": "kWh/year", "molar": "mol/year",
+    }
+    label = base_labels.get(dim, "?/year")
+
+    if time == "year":
+        return rate * qty_factor, label          # already annual — no × working_hours
+    time_factor = _TIME_TO_PER_HOUR[time]
+    return rate * qty_factor * time_factor * working_hours, label
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2110,7 +2126,7 @@ if st.button(
             "Capacity":                  st.session_state.pc_input,
             "Annual Capacity":           _ann_cap_val,
             "Annual Capacity Unit":      _ann_cap_unit,
-            "Capacity Label":            f"{_ann_cap_val:,.1f} {_ann_cap_unit}",
+            "Capacity Label":            f"{st.session_state.pc_input} {st.session_state.pu_input} → {_ann_cap_val:,.1f} {_ann_cap_unit}",
             "Process Variables":         edited_process_vars.dropna(how="all").to_dict(orient="records"),
             "Equipment Costs Source":    st.session_state.eq_cost_src,
             "Other Costs Source":        st.session_state.oth_cost_src,
