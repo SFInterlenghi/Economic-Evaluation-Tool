@@ -60,7 +60,7 @@
                 "Name": "Ethanol",
                 "Rate": 78.553,
                 "Rate Unit": "t/h",
-                "Price": 572.72,
+                "Price": 572.721625353204,
                 "Price Unit": "$/t"
             }
         ],
@@ -70,7 +70,7 @@
                 "Name": "Electricity",
                 "Rate": 3.738,
                 "Rate Unit": "MW",
-                "Price": 2e-05,
+                "Price": 2.24342105263158e-05,
                 "Price Unit": "$/kWh"
             },
             {
@@ -91,14 +91,14 @@
                 "Name": "Natural gas",
                 "Rate": 161.664,
                 "Rate Unit": "MW",
-                "Price": 0.03286,
+                "Price": 0.0328616615086447,
                 "Price Unit": "$/kWh"
             },
             {
                 "Name": "Wastewater treatment",
                 "Rate": 142.033,
                 "Rate Unit": "m3/h",
-                "Price": 0.4,
+                "Price": 0.398446810059649,
                 "Price Unit": "$/m3"
             },
             {
@@ -151,7 +151,7 @@
         "Op Supplies Override": null,
         "Maint Pct": 0.01,
         "Op Sup Pct": 0.002,
-        "Supply Maint Costs": 2733719.2308752583,
+        "Supply Maint Costs": 3273915.25,
         "Admin Overhead Override": null,
         "Mfg Overhead Override": null,
         "Taxes Ins Override": null,
