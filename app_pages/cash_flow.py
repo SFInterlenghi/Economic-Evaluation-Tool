@@ -551,12 +551,12 @@ base_op_sup_pct = _base("Op Sup Pct")
 wif_maint_pct   = _editable_row("Maintenance & repairs (% of CAPEX)", "Maint Pct",
                                   base_maint_pct * 100, step=0.1, suffix="%",
                                   fmt_fn=lambda v: f"{v:.2f}") / 100.0
-wif_op_sup_pct  = _editable_row("Operating supplies (% of Maint)", "Op Sup Pct",
+wif_op_sup_pct  = _editable_row("Operating supplies (% of CAPEX)", "Op Sup Pct",
                                   base_op_sup_pct * 100, step=0.1, suffix="%",
                                   fmt_fn=lambda v: f"{v:.2f}") / 100.0
 
 base_supply_maint = _base("Supply Maint Costs")
-wif_supply_maint  = (wif_maint_pct + wif_maint_pct * wif_op_sup_pct) * wif_capex
+wif_supply_maint  = (wif_maint_pct + wif_op_sup_pct) * wif_capex
 _result_row("SUPPLY & MAINTENANCE", base_supply_maint, wif_supply_maint, is_main=True)
 
 st.space("medium")
