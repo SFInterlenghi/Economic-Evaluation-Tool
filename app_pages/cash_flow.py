@@ -1351,7 +1351,7 @@ for i in range(_total):
 
     # ── INVESTMENT ──────────────────────────────────────────────────────────
     # Land purchased at year 0 (pre-construction)
-    i_land = -_land_buy if pre else 0.0
+    i_land = -_land_buy if pre else (+_land_buy if oi == _op - 1 else 0.0)
     # CAPEX distributed across EPC years 1.._epc  (fracs[i-1])
     i_cap  = -_capex * _cap_fracs[i - 1] if epc else 0.0
     # Working capital committed in the last EPC year
@@ -1772,9 +1772,11 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
             inv = -(_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0)
         elif epc:
             inv = -_c * _fracs[i - 1]
-        if i == _epc:    inv += -_lc_wc          # WC at end of last EPC year
-        if oi == _op - 1: inv += +_lc_wc          # WC recovered at end of operations
-        if oi == 0:      inv += -_lc_su           # startup in first op year
+        elif oi == _op - 1:
+            inv += (_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0)  # land recovery
+        if i == _epc:      inv += -_lc_wc          # WC at end of last EPC year
+        if oi == _op - 1:  inv += +_lc_wc          # WC recovered at end of operations
+        if oi == 0:        inv += -_lc_su           # startup in first op year
 
         f_int = f_amort = 0.0
         if _fa_leveraged:
@@ -1940,7 +1942,7 @@ with _ctrl_cols[0]:
         _eff_price = _widget_val
 
     st.markdown(f'<p style="font-size:.75rem;color:#6e7681;margin:.1rem 0 0 0">'
-                f'USD / {_price_unit}</p>', unsafe_allow_html=True)
+                f'USD / {_prod_base_unit}</p>', unsafe_allow_html=True)
 
     _mode_colors = {"USE_MSP":"green","SET_NPV":"blue","SET_IRR":"orange","MANUAL":"gray"}
     _mode_labels = {"USE_MSP":"MSP","SET_NPV":"Set NPV","SET_IRR":"Set IRR","MANUAL":"Manual"}
@@ -1950,8 +1952,8 @@ with _ctrl_cols[0]:
 
 with _ctrl_cols[1]:
     st.markdown('<p style="font-size:.85rem;color:#3fb950;margin:.3rem 0 .1rem 0">'
-                '① Minimum Selling Price</p>', unsafe_allow_html=True)
-    st.caption("Price at which NPV = 0")
+                '① Minimum Selling Price (MSP)</p>', unsafe_allow_html=True)
+    st.caption("Price at which NPV = 0 at the specified MARR.")
     _use_msp = st.button("Calculate MSP", key="btn_use_msp",
                           type="primary" if _pm["mode"] == "USE_MSP" else "secondary",
                           use_container_width=True, disabled=not _HAS_SCIPY)
@@ -1966,7 +1968,8 @@ with _ctrl_cols[1]:
 
 with _ctrl_cols[2]:
     st.markdown('<p style="font-size:.85rem;color:#58a6ff;margin:.3rem 0 .1rem 0">'
-                '② Set NPV target</p>', unsafe_allow_html=True)
+                '② Set NPV Target</p>', unsafe_allow_html=True)
+    st.caption("Enter target NPV in MM USD (millions).")
     _npv_target_input = st.number_input(
         "Target NPV (MMUSD)", value=float(_pm.get("npv_target", 0.0)),
         step=1.0, format="%.1f", key=f"npv_target_{scenario_name}",
