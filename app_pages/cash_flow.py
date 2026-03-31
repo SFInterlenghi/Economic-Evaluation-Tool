@@ -1235,6 +1235,15 @@ _epc_col   = str(_epc)
 _cap_fracs = _fa_capex_fracs
 
 _prod_unit   = d.get("Unit", "")
+
+# Clean base unit label — strips time dimension (e.g. "t/year" → "t", "kg/h" → "kg")
+def _base_unit_label(rate_unit: str) -> str:
+    if "/" in rate_unit:
+        return rate_unit.split("/")[0]
+    return rate_unit
+
+_prod_base_unit = _base_unit_label(_prod_unit)   # used in price labels and per-unit charts
+
 _wif_cap     = _wv("Capacity",               safe_val(d, "Capacity"))
 _wif_wh      = _wv("Working Hours per Year", safe_val(d, "Working Hours per Year", 8000.0))
 
@@ -2268,19 +2277,10 @@ _u_byprod      = _bp_base / _wif_cap if _wif_cap > 0 else 0.0
 _u_carbon_rev  = 0.0
 _u_fin_rev     = 0.0
 
-# Derive clean display unit for per-unit costs (strip time dimension from rate unit)
-# e.g. "t/year" -> "t", "kg/h" -> "kg", "L/day" -> "L"
-def _base_unit_label(rate_unit: str) -> str:
-    if "/" in rate_unit:
-        return rate_unit.split("/")[0]
-    return rate_unit
-
-_prod_base_unit = _base_unit_label(_prod_unit)   # e.g. "t" from "t/year"
-_pu = f"USD/{_prod_base_unit}"
-
 _u_total_cost = _u_rm + _u_cu + _u_lab + _u_sm + _u_afc + _u_ifc + _u_tax + _u_roi + _u_carbon_cost
 _u_total_rev  = _u_main + _u_byprod + _u_carbon_rev + (_u_fin_rev if _fa_leveraged else 0.0)
 _u_net_margin = max(0.0, _u_total_rev - _u_total_cost)
+_pu = f"USD/{_prod_base_unit}"
 
 st.markdown("---")
 st.markdown("### Project Cost & Revenue Composition")
