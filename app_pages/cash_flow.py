@@ -154,11 +154,18 @@ opex      = safe_val(d, "Total OPEX")
 section_header("Scenario summary", "#58a6ff")
 c1, c2, c3 = st.columns(3)
 with c1:
-    # FIX: use stored annual capacity label to avoid "t/year/year" double-suffix
+    # Smart capacity label: use kt/year for ≥0.1 kt, kg/year below that
     _ann_cap_val  = d.get("Annual Capacity", capacity)
     _ann_cap_unit = d.get("Annual Capacity Unit", "")
     if _ann_cap_unit:
-        _cap_label = f"{_ann_cap_val:,.0f} {_ann_cap_unit}"
+        # Convert annual kg to kt for display if applicable
+        if "kg" in _ann_cap_unit and _ann_cap_val >= 100_000:
+            _kt_val = _ann_cap_val / 1_000_000
+            _cap_label = f"{_kt_val:,.2f} kt/year"
+        elif "kg" in _ann_cap_unit:
+            _cap_label = f"{_ann_cap_val:,.0f} kg/year"
+        else:
+            _cap_label = f"{_ann_cap_val:,.1f} {_ann_cap_unit}"
     else:
         _raw_unit  = prod_unit.replace("/year", "").strip("/").strip()
         _cap_label = f"{capacity:,.0f} {_raw_unit}/year"
@@ -1206,7 +1213,9 @@ def _wv(key, fallback=0.0):
 
 _epc   = _fa_epc_yrs
 _op    = _fa_op_yrs
-_total = _epc + _op
+# Add 1 pre-construction year (year 0) for land purchase only.
+# EPC construction runs years 1.._epc; operations run years _epc+1.._epc+_op.
+_total = 1 + _epc + _op
 _y0    = int(d.get("Year of Analysis", 2024))
 
 _capex   = _wv("Project CAPEX",   safe_val(d, "Project CAPEX"))
@@ -1318,7 +1327,8 @@ _marr = _fa_marr
 
 T_cal  = [str(_y0 + i) for i in range(_total)]
 T_proj = [str(i)       for i in range(_total)]
-T_op   = ["—"] * _epc + [str(j) for j in range(1, _op + 1)]
+# Year 0 = land only (pre-construction); years 1.._epc = EPC; years _epc+1.. = operations
+T_op   = ["—"] * (1 + _epc) + [str(j) for j in range(1, _op + 1)]
 
 I_capex=[]; I_wc=[]; I_su=[]; I_land=[]; I_tot=[]
 R_main=[]; R_bp=[]; R_cc=[]; R_resid=[]; R_tot=[]
@@ -1332,18 +1342,27 @@ _accum_debt = 0.0
 _accum_pv   = 0.0
 
 for i in range(_total):
-    oi  = i - _epc
-    epc = i < _epc
+    # i=0: pre-construction (land purchase only)
+    # i=1.._epc: EPC construction years
+    # i=_epc+1.._total-1: operational years
+    epc = 1 <= i <= _epc          # True during construction years
+    pre = i == 0                  # True for land-purchase year
+    oi  = i - (_epc + 1)          # operational index (negative during pre+EPC)
 
-    i_cap  = -_capex * _cap_fracs[i] if epc else 0.0
-    i_wc   = (-_wc if i == _epc - 1 else (+_wc if oi == _op - 1 else 0.0))
+    # ── INVESTMENT ──────────────────────────────────────────────────────────
+    # Land purchased at year 0 (pre-construction)
+    i_land = -_land_buy if pre else 0.0
+    # CAPEX distributed across EPC years 1.._epc  (fracs[i-1])
+    i_cap  = -_capex * _cap_fracs[i - 1] if epc else 0.0
+    # Working capital committed in the last EPC year
+    i_wc   = (-_wc if i == _epc else (+_wc if oi == _op - 1 else 0.0))
+    # Startup costs in the first operational year
     i_su   = -_startup if oi == 0 else 0.0
-    i_land = -_land_buy if i == 0 else 0.0
     i_tot  = i_cap + i_wc + i_su + i_land
     I_capex.append(i_cap); I_wc.append(i_wc); I_su.append(i_su)
     I_land.append(i_land); I_tot.append(i_tot)
 
-    f_debt  = (_tot_debt * _cap_fracs[i]) if (epc and _leveraged) else 0.0
+    f_debt  = (_tot_debt * _cap_fracs[i - 1]) if (epc and _leveraged) else 0.0
     _accum_debt += f_debt
     f_int   = -_accum_debt * _cod if _leveraged else 0.0
     f_amort = (-_ann_repay
@@ -1356,7 +1375,7 @@ for i in range(_total):
     F_debt.append(f_debt); F_amort.append(f_amort); F_accum.append(f_accum)
     F_int.append(f_int);   F_tot.append(f_tot)
 
-    if epc:
+    if pre or epc:  # non-operational years: no revenue or expense rows
         for lst in [R_main,R_bp,R_cc,R_resid,R_tot]: lst.append(None)
         for lst in [E_rm,E_cu,E_carb,E_lab,E_sm,E_afc,E_ifc,E_rent,E_tot]: lst.append(None)
         for lst in [C_rev,C_vl,C_gp,C_fix,C_ebitda,C_dep,
@@ -1744,14 +1763,18 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
     cfs = []; accum_pv = 0.0; pv_list = []; accum_list = []
 
     for i in range(_total):
-        oi     = i - _epc
-        is_epc = i < _epc
+        epc    = 1 <= i <= _epc
+        pre    = i == 0
+        oi     = i - (_epc + 1)
 
-        inv = -_c * _fracs[i] if is_epc else 0.0
-        if i == _epc - 1:  inv += -_lc_wc
-        if oi == _op - 1:  inv += +_lc_wc
-        if oi == 0:        inv += -_lc_su
-        if i == 0:         inv += -(_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0)
+        inv = 0.0
+        if pre:
+            inv = -(_fa_land_buy * capex_mult if _fa_land_opt == "Buy" else 0.0)
+        elif epc:
+            inv = -_c * _fracs[i - 1]
+        if i == _epc:    inv += -_lc_wc          # WC at end of last EPC year
+        if oi == _op - 1: inv += +_lc_wc          # WC recovered at end of operations
+        if oi == 0:      inv += -_lc_su           # startup in first op year
 
         f_int = f_amort = 0.0
         if _fa_leveraged:
@@ -1762,7 +1785,7 @@ def _build_cf_arrays(product_price, capex_mult=1.0):
             if oi >= _fa_grace_yrs and (oi - _fa_grace_yrs) < _fa_amort_yrs:
                 f_amort = -_ann_r
 
-        if is_epc:
+        if pre or epc:
             cf = inv + f_int + f_amort
             pv = cf / (1 + _fa_marr) ** i
             accum_pv += pv
@@ -2008,15 +2031,15 @@ def _indicators(cfs, acpv, capex_mult=1.0):
     msp_ = _solve_price_for_npv(0.0, capex_mult) if _HAS_SCIPY else None
 
     payback_   = next((i for i, v in enumerate(acpv) if v >= 0), None)
-    payback_op = (payback_ - _epc) if payback_ is not None else None
+    payback_op = (payback_ - (_epc + 1)) if payback_ is not None else None
     breakeven_yr = payback_op
 
-    op_cfs = cfs[_epc:]
+    op_cfs = cfs[_epc + 1:]   # operational CFs start after land year + EPC years
     avg_np = np.mean(op_cfs) if op_cfs else 0.0
-    roi_val = (sum(op_cfs) + sum(cfs[:_epc])) / _op if _op > 0 else 0.0
+    roi_val = (sum(op_cfs) + sum(cfs[:_epc + 1])) / _op if _op > 0 else 0.0
 
-    _ss_i  = min(_epc + 2, _total - 1)
-    oi_ss  = _ss_i - _epc
+    _ss_i  = min(_epc + 1 + 2, _total - 1)   # 3rd operational year (accounts for pre-construction year)
+    oi_ss  = _ss_i - (_epc + 1)
     cp     = _cpct(oi_ss); fp = _fpct(oi_ss)
     rev_ss = ((_eff_price * _wif_cap * cp * (1+_fa_g_main)**oi_ss)
               + (_bp_base * cp * (1+_fa_g_byprod)**oi_ss))
@@ -2133,13 +2156,13 @@ with graph_col:
                              line=dict(color='#58a6ff', width=2.5),
                              hovertemplate='%{x}: %{y:.1f} MMUSD<extra>Base case</extra>'))
     fig.add_hline(y=0, line_color='#484f58', line_width=1)
-    _epc_end_yr = _y0 + _epc - 1
+    _epc_end_yr = _y0 + _epc   # land year (i=0) + _epc construction years
     fig.add_vline(x=_epc_end_yr, line_dash='dot', line_color='#6e7681', line_width=1)
-    fig.add_annotation(x=_epc_end_yr, y=min(_acpv_b_M)*0.6, text="EPC",
+    fig.add_annotation(x=_epc_end_yr, y=min(_acpv_b_M)*0.6, text="End of EPC",
                        showarrow=False, font=dict(size=10, color='#6e7681'))
     _pb = _ind_base["Payback"]
     if _pb is not None:
-        _pb_yr = _y0 + _epc + _pb
+        _pb_yr = _y0 + (_epc + 1) + _pb   # land year + EPC years + operational payback year
         if _pb_yr in _cal_yrs:
             _pb_idx = _cal_yrs.index(_pb_yr)
             fig.add_annotation(
@@ -2211,12 +2234,6 @@ st.space("medium")
 # ═════════════════════════════════════════════════════════════════════════════
 # SECTION 5: PROJECT COST & REVENUE COMPOSITION
 # ═════════════════════════════════════════════════════════════════════════════
-st.markdown("---")
-st.markdown("### Project Cost & Revenue Composition")
-st.caption(
-    "Per-unit breakdown at steady-state (full capacity, no growth effects). "
-    f"Functional unit: 1 {_prod_unit} of {d.get('Product Name', 'product')}."
-)
 
 _ss_oi   = min(2, _op - 1)
 _ss_cap  = _cpct(_ss_oi)
@@ -2248,10 +2265,27 @@ _u_byprod      = _bp_base / _wif_cap if _wif_cap > 0 else 0.0
 _u_carbon_rev  = 0.0
 _u_fin_rev     = 0.0
 
+# Derive clean display unit for per-unit costs (strip time dimension from rate unit)
+# e.g. "t/year" -> "t", "kg/h" -> "kg", "L/day" -> "L"
+def _base_unit_label(rate_unit: str) -> str:
+    if "/" in rate_unit:
+        return rate_unit.split("/")[0]
+    return rate_unit
+
+_prod_base_unit = _base_unit_label(_prod_unit)   # e.g. "t" from "t/year"
+_pu = f"USD/{_prod_base_unit}"
+
 _u_total_cost = _u_rm + _u_cu + _u_lab + _u_sm + _u_afc + _u_ifc + _u_tax + _u_roi + _u_carbon_cost
 _u_total_rev  = _u_main + _u_byprod + _u_carbon_rev + (_u_fin_rev if _fa_leveraged else 0.0)
 _u_net_margin = max(0.0, _u_total_rev - _u_total_cost)
-_pu = f"USD/{_prod_unit}"
+
+st.markdown("---")
+st.markdown("### Project Cost & Revenue Composition")
+st.caption(
+    f"Steady-state techno-economic breakdown at full design capacity "
+    f"({d.get('Product Name', 'product')}). "
+    f"All unit costs expressed per {_prod_base_unit} of main product."
+)
 
 _LAYOUT = dict(
     paper_bgcolor="#0d1117", plot_bgcolor="#161b22",
@@ -2284,7 +2318,7 @@ with _tbl_col:
             f'<span style="font-size:.7rem;color:#8b949e">{unit}</span>'
             f'</div>', unsafe_allow_html=True)
 
-    _hdr("Annual capacity", f"{_prod_unit}/yr")
+    _hdr("Annual capacity", f"{_prod_base_unit}/year")
     _row(d.get("Product Name", "Product"), _wif_cap, bold=True)
     _hdr("Project costs", _pu)
     _row("Raw materials",          _u_rm,          indent=True)
@@ -2380,17 +2414,24 @@ with _rev_snk_col:
     st.plotly_chart(_fig_rev, use_container_width=True)
 
 st.markdown("---")
-section_header("Combined cost–revenue analysis", "#e6a817")
-st.caption("Three views of the same data — choose what resonates best with your clients.")
+section_header("Integrated Cost–Revenue Analysis", "#e6a817")
+st.caption(
+    "Three complementary perspectives on the same underlying data. "
+    "All values are per-unit at steady-state, expressed in "
+    f"{_pu}."
+)
 
 _tabs = st.tabs([
-    "① Waterfall — revenue to net margin",
-    "② Diverging bar — costs vs revenues",
-    "③ Bridge — cost stack vs revenue stack",
+    "Waterfall — Value Decomposition",
+    "Diverging Bar — Cost vs. Revenue",
+    "Bridge — Cost & Revenue Stacks",
 ])
 
 with _tabs[0]:
-    st.caption("Revenue minus each cost step by step — shows exactly where every USD goes.")
+    st.caption(
+        "Starting from total revenue, each cost category is subtracted in sequence to arrive at "
+        "the net operating margin. Highlights the relative weight of each cost driver."
+    )
     _wf_labels = ["Revenue", "Raw mat.", "Chem. inp.", "Labor", "S&M",
                   "AFC", "Indirect", "Taxes", "ROI", "Net margin"]
     _wf_y   = [_u_total_rev, -_u_rm, -_u_cu, -_u_lab, -_u_sm,
@@ -2419,7 +2460,10 @@ with _tabs[0]:
     st.plotly_chart(_fig_wf, use_container_width=True)
 
 with _tabs[1]:
-    st.caption("Costs extend left, revenues right — balanced view at the functional unit level.")
+    st.caption(
+        "Cost categories extend to the left; revenue streams to the right. "
+        "The zero axis represents the break-even point at the per-unit level."
+    )
     _all_cats = ["Raw materials", "Chem. inputs & util.", "Labor", "S&M",
                  "AFC", "Indirect fixed", "Taxes", "ROI",
                  "Main product", "Byproducts"]
@@ -2454,7 +2498,10 @@ with _tabs[1]:
     st.plotly_chart(_fig_div, use_container_width=True)
 
 with _tabs[2]:
-    st.caption("Stacked cost vs revenue side by side — gap is the net return to investors.")
+    st.caption(
+        "Total cost and total revenue are shown as stacked columns. "
+        "The gap between the two columns represents the project's net margin per unit of output."
+    )
     _fig_br = go.Figure()
     _cst_l = ["Raw mat.", "Chem. inp.", "Labor", "S&M", "AFC", "Indirect", "Taxes", "ROI"]
     _cst_v = [_u_rm, _u_cu, _u_lab, _u_sm, _u_afc, _u_ifc, _u_tax, _u_roi]
