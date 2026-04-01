@@ -1,12 +1,12 @@
-"""ISI-Tool — Home page."""
+"""Home page."""
 import streamlit as st
 from utils.ui import inject_css
 
 inject_css()
 
 # ── Hero ──────────────────────────────────────────────────────────────────────
-st.markdown("### ISI-Tool")
-st.caption("CHEMICAL PLANT ECONOMIC EVALUATION")
+st.markdown("### SENAI-Tool")
+st.caption(" Strategic Economic Navigator for Advanced Investment ")
 
 st.space("medium")
 
