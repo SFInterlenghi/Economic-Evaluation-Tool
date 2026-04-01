@@ -51,13 +51,18 @@ page = st.navigation(
             st.Page("app_pages/operating_expenses.py", title="Operating Expenses", icon=":material/payments:"),
             st.Page("app_pages/cash_flow.py", title="Cash Flow & Analysis", icon=":material/trending_up:"),
         ],
+        "Decision Support": [
+            st.Page("app_pages/scenario_comparison.py", title="Scenario Comparison", icon=":material/compare_arrows:"),
+            st.Page("app_pages/risk_sensitivity.py", title="Risk & Sensitivity", icon=":material/ssid_chart:"),
+            st.Page("app_pages/multi_criteria.py", title="Multi-Criteria Analysis", icon=":material/balance:"),
+        ],
     },
     position="sidebar",
 )
 
 # ── Sidebar footer ───────────────────────────────────────────────────────────
 with st.sidebar:
-    st.caption("ISI-Tool v2.0")
+    st.caption("ISI-Tool v2.1")
     n = len(st.session_state.scenarios)
     if n:
         st.badge(f"{n} scenario{'s' if n != 1 else ''} saved", icon=":material/check_circle:", color="green")
