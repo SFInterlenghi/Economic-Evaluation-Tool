@@ -1,5 +1,5 @@
 """
-SENAI - TOOL  Strategic Economic Navigator for Advanced Investment
+SENAI-Tool — Chemical Plant Economic Evaluation
 Main entry point with navigation.
 """
 import streamlit as st
@@ -25,8 +25,8 @@ for file_name in validation_files:
             st.error(f"Error loading {file_name}: {e}")
 
 st.set_page_config(
-    page_title="ISI-Tool",
-    page_icon=":material/precision_manufacturing:",
+    page_title="SENAI",
+    page_icon="⚗️",
     layout="wide",
 )
 
@@ -62,7 +62,7 @@ page = st.navigation(
 
 # ── Sidebar footer ───────────────────────────────────────────────────────────
 with st.sidebar:
-    st.caption("SENAI-Tool v0.1")
+    st.caption("ISI-Tool v2.1")
     n = len(st.session_state.scenarios)
     if n:
         st.badge(f"{n} scenario{'s' if n != 1 else ''} saved", icon=":material/check_circle:", color="green")
