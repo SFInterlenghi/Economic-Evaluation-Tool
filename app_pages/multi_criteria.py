@@ -1,10 +1,13 @@
 """ISI-Tool — Multi-Criteria Analysis (MCA) page.
 
 Ranks heterogeneous scenarios using TOPSIS for strategic decision support.
+Uses what-if overrides, financial assumptions, and user-configurable
+product prices for evaluation.
 """
 import streamlit as st
 import numpy as np
 import plotly.graph_objects as go
+import pandas as pd
 from utils.constants import safe_val, fmt_compact, PLOTLY_LAYOUT, PALETTE, TRL_OPTIONS
 from utils.ui import inject_css, page_header, section_header, kpi_card, require_scenarios
 from utils.finance import (
@@ -56,32 +59,158 @@ if len(selected) < 2:
     st.info("Select at least 2 scenarios to proceed.")
     st.stop()
 
-# ── Compute KPIs for all selected scenarios ──────────────────────────────────
-section_header("Financial KPI computation", "#58a6ff")
 
-@st.cache_data(show_spinner=False)
-def _compute_scenario_kpis(scenario_name: str, scenario_data: dict) -> dict:
-    """Compute financial indicators for a single scenario."""
-    wif = st.session_state.get("cf_wif", {}).get(scenario_name, {})
-    fin = st.session_state.get("cf_fin", {}).get(scenario_name, {})
-    p = extract_params(scenario_data, wif, fin)
+# ═══════════════════════════════════════════════════════════════════════════════
+# EVALUATION PARAMETERS — price & what-if source
+# ═══════════════════════════════════════════════════════════════════════════════
+section_header("Evaluation parameters", "#58a6ff")
 
-    # Determine selling price
+st.caption(
+    "The MCA uses what-if overrides and financial assumptions from the Cash Flow page. "
+    "You can also override the product price here to evaluate all scenarios at a common "
+    "price point, or set individual prices per scenario."
+)
+
+# ── Price mode ───────────────────────────────────────────────────────────────
+price_mode = st.radio(
+    "Product price source",
+    [
+        "Use Cash Flow prices (what-if / MSP fallback)",
+        "Set a common price for all scenarios",
+        "Set individual prices per scenario",
+    ],
+    index=0,
+    key="mca_price_mode",
+    horizontal=True,
+)
+
+
+def _resolve_cf_price(scenario_name: str, scenario_data: dict) -> float:
+    """Get the effective price from the Cash Flow page state."""
     _pm = st.session_state.get("cf_price_mode", {}).get(scenario_name, {})
     _pm_mode = _pm.get("mode", "MANUAL")
     _input_price = safe_val(scenario_data, "Main Product Price", 0.0)
-
     if _pm_mode != "MANUAL" and _pm.get("solved_price"):
-        price = float(_pm["solved_price"])
+        return float(_pm["solved_price"])
     elif _pm.get("manual_price") is not None:
-        price = float(_pm["manual_price"])
-    else:
-        price = _input_price
+        return float(_pm["manual_price"])
+    return _input_price
 
-    # If no price set, try to compute MSP
+
+# Resolve prices based on mode
+mca_prices = {}
+
+if price_mode == "Set a common price for all scenarios":
+    # Get a default — use average of existing prices or a reasonable default
+    existing_prices = []
+    for name in selected:
+        p = _resolve_cf_price(name, scenarios[name])
+        if p > 0:
+            existing_prices.append(p)
+    default_common = sum(existing_prices) / len(existing_prices) if existing_prices else 5000.0
+
+    unit_labels = list({scenarios[n].get("Unit", "unit") for n in selected})
+    unit_str = unit_labels[0] if len(unit_labels) == 1 else "/".join(unit_labels)
+
+    common_price = st.number_input(
+        f"Common product price (USD / {unit_str})",
+        value=default_common,
+        min_value=0.01,
+        step=100.0,
+        format="%.2f",
+        key="mca_common_price",
+    )
+    for name in selected:
+        mca_prices[name] = common_price
+
+elif price_mode == "Set individual prices per scenario":
+    price_cols = st.columns(min(len(selected), 4))
+    for i, name in enumerate(selected):
+        d = scenarios[name]
+        cf_price = _resolve_cf_price(name, d)
+        unit = d.get("Unit", "unit")
+        with price_cols[i % len(price_cols)]:
+            mca_prices[name] = st.number_input(
+                f"{name} (USD/{unit})",
+                value=cf_price if cf_price > 0 else 5000.0,
+                min_value=0.01,
+                step=100.0,
+                format="%.2f",
+                key=f"mca_price_{name}",
+            )
+else:
+    # Use Cash Flow prices
+    for name in selected:
+        mca_prices[name] = _resolve_cf_price(name, scenarios[name])
+
+st.space("small")
+
+# Show what-if status per scenario
+wif_status = []
+for name in selected:
+    wif = st.session_state.get("cf_wif", {}).get(name, {})
+    fin = st.session_state.get("cf_fin", {}).get(name, {})
+    n_wif = len(wif)
+    n_fin = sum(1 for k in fin if not k.startswith("_"))
+    price = mca_prices[name]
+    wif_status.append({
+        "Scenario": name,
+        "Price (USD/unit)": f"${price:,.2f}" if price > 0 else "MSP (auto)",
+        "What-if overrides": f"{n_wif}" if n_wif else "—",
+        "Financial overrides": f"{n_fin}" if n_fin else "—",
+    })
+
+st.markdown(
+    '<p style="font-size:.72rem;color:#6e7681;font-weight:600;text-transform:uppercase;'
+    'letter-spacing:.08em;margin:.3rem 0 .2rem 0">Data sources per scenario</p>',
+    unsafe_allow_html=True,
+)
+
+# Build concise HTML status table
+status_hdr = "".join(
+    f'<th style="padding:.3rem .6rem;text-align:left;font-size:.72rem;'
+    f'color:#8b949e;border-bottom:1px solid #21262d">{col}</th>'
+    for col in ["Scenario", "Price", "What-if", "Fin. assumptions"]
+)
+status_rows = ""
+for row in wif_status:
+    color = cmap.get(row["Scenario"], "#8b949e")
+    status_rows += (
+        f'<tr style="border-bottom:1px solid #21262d22">'
+        f'<td style="padding:.3rem .6rem;font-size:.8rem;color:{color};font-weight:600">{row["Scenario"]}</td>'
+        f'<td style="padding:.3rem .6rem;font-size:.8rem;font-family:DM Mono,monospace;color:#c9d1d9">{row["Price (USD/unit)"]}</td>'
+        f'<td style="padding:.3rem .6rem;font-size:.8rem;color:#8b949e">{row["What-if overrides"]}</td>'
+        f'<td style="padding:.3rem .6rem;font-size:.8rem;color:#8b949e">{row["Financial overrides"]}</td>'
+        f'</tr>'
+    )
+st.markdown(
+    f'<div style="border:1px solid #21262d;border-radius:6px;background:#161b22;overflow-x:auto">'
+    f'<table style="width:100%;border-collapse:collapse"><thead><tr>{status_hdr}</tr></thead>'
+    f'<tbody>{status_rows}</tbody></table></div>',
+    unsafe_allow_html=True,
+)
+
+st.space("medium")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPUTE KPIs
+# ═══════════════════════════════════════════════════════════════════════════════
+section_header("Financial KPI computation", "#3fb950")
+
+scenario_kpis = {}
+for name in selected:
+    d = scenarios[name]
+    wif = st.session_state.get("cf_wif", {}).get(name, {})
+    fin = st.session_state.get("cf_fin", {}).get(name, {})
+    p = extract_params(d, wif, fin)
+
+    price = mca_prices[name]
+
+    # If still no price, compute MSP as fallback
     if price <= 0:
         msp = solve_price_for_npv(p, 0.0)
         price = msp if (msp is not None and msp > 0) else 0.0
+        mca_prices[name] = price
 
     if price > 0:
         ind = compute_indicators(p, price)
@@ -95,31 +224,21 @@ def _compute_scenario_kpis(scenario_name: str, scenario_data: dict) -> dict:
             "Net Profit Margin": 0.0,
         }
 
-    # Augment with scenario-specific data
     ind["price"] = price
-    ind["TRL_ordinal"] = TRL_ORDINAL.get(scenario_data.get("TRL", ""), 5.0)
-    ind["TRL_label"] = scenario_data.get("TRL", "—")
+    ind["TRL_ordinal"] = TRL_ORDINAL.get(d.get("TRL", ""), 5.0)
+    ind["TRL_label"] = d.get("TRL", "—")
 
-    # TIC accuracy range width
-    lo_pct = safe_val(scenario_data, "TIC Lower Pct", 0.0)
-    hi_pct = safe_val(scenario_data, "TIC Upper Pct", 0.0)
+    lo_pct = safe_val(d, "TIC Lower Pct", 0.0)
+    hi_pct = safe_val(d, "TIC Upper Pct", 0.0)
     ind["TIC_accuracy_width"] = abs(hi_pct - lo_pct) if (lo_pct != 0 or hi_pct != 0) else 60.0
 
-    # Capital efficiency: NPV / TIC
     tic = ind.get("TIC", 1.0) or 1.0
     ind["Capital_Efficiency"] = ind["NPV"] / tic if tic > 0 else 0.0
 
-    # OPEX per unit
     cap = ind.get("Capacity", 1.0) or 1.0
     ind["OPEX_per_unit"] = ind["OPEX"] / cap if cap > 0 else 0.0
 
-    return ind
-
-
-with st.spinner("Computing financial KPIs for selected scenarios…"):
-    scenario_kpis = {}
-    for name in selected:
-        scenario_kpis[name] = _compute_scenario_kpis(name, scenarios[name])
+    scenario_kpis[name] = ind
 
 # Show computed KPIs
 kpi_cols = st.columns(min(len(selected), 4))
@@ -128,9 +247,13 @@ for i, name in enumerate(selected):
         ind = scenario_kpis[name]
         npv_str = f"${ind['NPV']/1e6:.1f}M" if ind["NPV"] else "—"
         irr_str = f"{ind['IRR']*100:.1f}%" if ind["IRR"] else "—"
+        price_str = f"${ind['price']:,.0f}" if ind["price"] else "—"
         with st.container(border=True):
             st.markdown(f"**{name}**")
-            st.caption(f"NPV: {npv_str}  ·  IRR: {irr_str}  ·  TRL: {ind['TRL_label']}")
+            st.caption(
+                f"Price: {price_str}  ·  NPV: {npv_str}  ·  "
+                f"IRR: {irr_str}  ·  TRL: {ind['TRL_label']}"
+            )
 
 st.space("medium")
 
@@ -195,7 +318,6 @@ CRITERIA = [
     },
 ]
 
-# Weight sliders
 w_cols = st.columns(len(CRITERIA))
 raw_weights = []
 for col, crit in zip(w_cols, CRITERIA):
@@ -211,7 +333,6 @@ for col, crit in zip(w_cols, CRITERIA):
         )
         raw_weights.append(w)
 
-# Normalize weights
 total_w = sum(raw_weights)
 if total_w == 0:
     st.warning("All weights are zero — set at least one weight above 0.")
@@ -219,7 +340,6 @@ if total_w == 0:
 
 norm_weights = [w / total_w for w in raw_weights]
 
-# Display normalized weights
 w_display = "  ·  ".join(
     f"**{c['name']}**: {nw*100:.0f}%"
     for c, nw in zip(CRITERIA, norm_weights)
@@ -233,7 +353,6 @@ st.space("medium")
 # ═══════════════════════════════════════════════════════════════════════════════
 section_header("TOPSIS ranking", "#3fb950")
 
-# Build decision matrix
 n_alt = len(selected)
 n_crit = len(CRITERIA)
 
@@ -249,16 +368,13 @@ for i, name in enumerate(selected):
 weights_arr = np.array(norm_weights)
 is_benefit_arr = np.array([c["is_benefit"] for c in CRITERIA])
 
-# Run TOPSIS
 closeness = topsis(decision_matrix, weights_arr, is_benefit_arr)
 
-# Rank
-rank_order = np.argsort(-closeness)  # descending
+rank_order = np.argsort(-closeness)
 ranks = np.empty_like(rank_order)
 ranks[rank_order] = np.arange(1, n_alt + 1)
 
 # ── Results Table ────────────────────────────────────────────────────────────
-# Build header
 crit_headers = "".join(
     f'<th style="padding:.4rem .6rem;text-align:right;font-size:.72rem;'
     f'color:#8b949e;white-space:nowrap">{c["name"]}<br>'
@@ -274,7 +390,6 @@ for idx in rank_order:
     score = closeness[idx]
     color = cmap.get(name, PALETTE[idx % len(PALETTE)])
 
-    # Medal for top 3
     medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
 
     cells = ""
@@ -330,7 +445,6 @@ section_header("Radar chart — trade-off visualization", "#58a6ff")
 
 st.caption("Normalized scores (0–1) across all criteria. Larger area = better overall performance.")
 
-# Normalize each criterion to [0, 1] for radar display
 radar_matrix = np.zeros_like(decision_matrix)
 for j in range(n_crit):
     col = decision_matrix[:, j]
@@ -339,14 +453,12 @@ for j in range(n_crit):
         normalized = (col - cmin) / (cmax - cmin)
     else:
         normalized = np.full_like(col, 0.5)
-    # Flip for cost criteria
     if not CRITERIA[j]["is_benefit"]:
         normalized = 1.0 - normalized
     radar_matrix[:, j] = normalized
 
 categories = [c["name"] for c in CRITERIA]
 
-# Show top N scenarios on radar
 max_radar = min(5, n_alt)
 top_indices = rank_order[:max_radar]
 
@@ -354,7 +466,7 @@ fig_radar = go.Figure()
 for idx in top_indices:
     name = selected[idx]
     vals = list(radar_matrix[idx])
-    vals.append(vals[0])  # close the polygon
+    vals.append(vals[0])
     cats = categories + [categories[0]]
     color = cmap.get(name, PALETTE[idx % len(PALETTE)])
 
@@ -397,7 +509,6 @@ with st.expander("TOPSIS methodology — step-by-step detail",
                   icon=":material/info:"):
     st.markdown("**Step 1: Decision Matrix**")
     st.caption("Raw values for each scenario × criterion.")
-    import pandas as pd
     dm_df = pd.DataFrame(
         decision_matrix,
         index=selected,
